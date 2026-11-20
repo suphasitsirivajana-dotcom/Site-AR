@@ -3,7 +3,7 @@ const VERSION = 'sitear-v1.1.0';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/viewer.js', './js/loaders.js', './js/geo.js', './js/store.js', './js/project.js', './js/sensors.js',
-  './js/ar.js', './js/bcf.js', './js/qr.js', './js/ui.js', './js/icons.js'
+  './js/ar.js', './js/pose.js', './js/bcf.js', './js/qr.js', './js/ui.js', './js/icons.js'
 ];
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 

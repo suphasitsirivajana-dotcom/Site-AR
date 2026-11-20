@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { icon } from './icons.js';
 import { normDeg180, modelHeadingOfRawDir } from './geo.js';
+import { detectQR } from './qr.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -32,7 +33,10 @@ export class ARController extends EventTarget {
     o.innerHTML = `
       <div class="ar-top">
         <div class="ar-title"><span class="live-dot"></span>${kind === 'xr' ? 'WebXR AR' : 'Camera AR'}<span class="ar-status" id="ar-status"></span></div>
-        <button class="ar-btn icon-only" data-ar="exit" aria-label="Exit AR">${icon('x')}</button>
+        <div class="ar-right">
+          ${kind === 'cam' ? `<button class="ar-btn qrb" data-ar="qrlock" aria-label="QR Lock">${icon('qr')}<span>QR</span></button><button class="ar-btn fwd" data-ar="fwd" aria-label="Step forward">${icon('follow')}<span>เดิน</span></button>` : ''}
+          <button class="ar-btn icon-only" data-ar="exit" aria-label="Exit AR">${icon('x')}</button>
+        </div>
       </div>
       <div class="ar-reticle-hint" id="ar-hint"></div>
       <div class="ar-bottom">
@@ -73,11 +77,20 @@ export class ARController extends EventTarget {
       if (a === 'align') this.alignXR();
       if (a === 'recal') { this.orient.recalibrate(); this._setTrim(0); this.toast('กลับไปใช้เข็มทิศ — ถือเครื่องตั้งตรงและนิ่ง ๆ', 'info'); }
       if (a === 'face') this.alignToFace();
+      if (a === 'qrlock') this._toggleQrLock();
       if (a === 'steps') this.toggleSteps().then(() => this._syncSteps());
       if (a === 'mark') this._beginMark();
       if (a === 'shot') this._beginMark(true);
       if (a === 'qcancel') this._endMark();
     };
+    // ▲ walk button: tap = one step, hold = keep walking (backup for when the step counter misses steps)
+    const fb = o.querySelector('[data-ar=fwd]');
+    if (fb) {
+      let tm = null; const go = () => this.manualStep && this.manualStep();
+      const stop = () => { clearInterval(tm); tm = null; };
+      fb.addEventListener('pointerdown', (e) => { e.preventDefault(); go(); tm = setInterval(go, 450); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => fb.addEventListener(ev, stop));
+    }
     o.querySelector('#ar-trim').oninput = (e) => this._setTrim(+e.target.value, false);
     o.querySelector('#ar-op').oninput = (e) => { this.settings.arOpacity = +e.target.value; this.viewer.setOpacityFactor(+e.target.value); };
     o.querySelector('#ar-qtype').onclick = (e) => {
@@ -87,7 +100,11 @@ export class ARController extends EventTarget {
     o.querySelector('#ar-quick').onsubmit = (e) => { e.preventDefault(); this._saveMark(); };
     o.querySelector('#ar-ref').onchange = () => { if (this.active === 'xr' && this.aligned) this.alignXR(this._lastW); };
   }
-  _syncSteps() { const b = this.overlay.querySelector('[data-ar=steps]'); if (b) b.classList.toggle('on', !!this.stepsActive()); }
+  _syncSteps() {
+    const b = this.overlay.querySelector('[data-ar=steps]'); if (!b) return;
+    b.classList.add('on');
+    const l = b.querySelector('span'); if (l && this.trackLabel) l.textContent = this.trackLabel();
+  }
 
   // Freeze the compass: after the user aligned the view, only the gyro (smooth, drift-free over minutes)
   // drives rotation. A wobbling compass is what makes the model "lose its direction" when you turn.
@@ -96,18 +113,54 @@ export class ARController extends EventTarget {
     this.orient.manual = true;
   }
   // rotate the overlay so the camera's current model-heading equals `target` (deg clockwise from model +Y)
-  alignToHeading(target) {
-    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.viewer.persp.quaternion);
-    if (Math.abs(f.y) > 0.9) { this.toast('เงยหน้าเครื่องให้มองระดับสายตาก่อน แล้วกดอีกครั้ง', 'warn'); return false; }
+  // useTop: when the camera looks steeply up/down, use the top of the screen as the heading reference (same rule as pose.js)
+  alignToHeading(target, useTop = false, gain = 1) {
+    const q = this.active === 'cam' && this._camQ ? this._camQ : this.viewer.persp.quaternion; // the TARGET orientation, not the smoothed one
+    let f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+    if (Math.abs(f.y) > 0.85) {
+      if (!useTop) { this.toast('เงยหน้าเครื่องให้มองระดับสายตาก่อน แล้วกดอีกครั้ง', 'warn'); return false; }
+      f = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    }
     const hm = modelHeadingOfRawDir(f);
     this._freezeCompass();
-    this._setTrim(this.trim + normDeg180(hm - target)); // +trim turns the camera CCW → heading decreases
+    this._setTrim(this.trim + gain * normDeg180(hm - target)); // +trim turns the camera CCW → heading decreases
     return true;
+  }
+
+  // ---- QR Lock: find the QR in the live video, compute the camera pose from it, snap position + heading
+  _toggleQrLock() {
+    this.qrLock = !this.qrLock;
+    const b = this.overlay.querySelector('[data-ar=qrlock]'); if (b) b.classList.toggle('on', this.qrLock);
+    this._qrLabel(this.qrLock ? 'เล็งกล้องไปที่ QR (ห่าง ≤ 2 m)' : '');
+    this._qt = 0;
+  }
+  _qrLabel(t) { const el = this.overlay.querySelector('#ar-hint'); if (el) { el.textContent = t; el.hidden = !t; } }
+  _qrTick(dt) {
+    if (!this.qrLock || !this.onQrDetect) return;
+    this._qt = (this._qt || 0) + dt;
+    if (this._qt < 0.3) return; // ≥ 300 ms: the smoothed camera has time to settle between corrections
+    this._qt = 0;
+    const v = this.video;
+    if (!v.videoWidth) return;
+    let det = null;
+    try { det = detectQR(v); } catch (e) { det = null; }
+    if (!det) { if (performance.now() - (this._qrSeen || 0) > 2000) this._qrLabel('ไม่เจอ QR — เล็งให้เห็นเต็มกรอบ ห่าง ≤ 2 m'); return; }
+    const cv = this.viewer.canvas, cw = cv.clientWidth, ch = cv.clientHeight;
+    const s = Math.max(cw / det.vw, ch / det.vh); // object-fit: cover
+    const f = (ch / 2) / Math.tan(THREE.MathUtils.degToRad(this.viewer.persp.fov) / 2) / s; // focal length in VIDEO pixels
+    const res = this.onQrDetect(det, { f, cx: det.vw / 2, cy: det.vh / 2 });
+    if (!res) return;
+    if (res.ok) {
+      this._qrSeen = performance.now();
+      this.alignToHeading(res.heading, true, res.gain * 0.6);
+      this._qrLabel(res.msg);
+    } else this._qrLabel(res.msg);
   }
   alignToFace() {
     const h = this.getFaceHeading && this.getFaceHeading();
     if (h == null) return this.toast('ยังไม่มี Face Point — ออกจาก AR แล้วไป Site → Face Point (ต้องตั้งจุดที่ยืนด้วย)', 'warn', 5000);
     if (this.alignToHeading(h)) this.toast('ล็อกทิศแล้ว — หมุนตัวได้เลย', 'ok', 2500);
+    // (the QR Lock path passes useTop + a smoothing gain)
   }
   // one-finger drag left/right turns the model overlay to match the real world (the drag direction = the way the model moves)
   _bindDrag() {
@@ -296,6 +349,7 @@ export class ARController extends EventTarget {
     this._camHook = (dt) => this._camFrame(dt);
     v.hooks.add(this._camHook);
     this._bindDrag();
+    v.headingTrim = this.trim; // keep the walking direction (step counter) in sync with the overlay trim
     this._status(this.orient.hasTrueNorth ? 'compass OK' : 'waiting for compass…');
     this._hint(this.getPositionRaw()
       ? 'โมเดลไม่ตรงกับของจริง? ลากนิ้วซ้าย/ขวาเพื่อหมุนให้ตรง · หรือหันไปที่ Face Point แล้วกด Face'
@@ -314,13 +368,18 @@ export class ARController extends EventTarget {
       this._camQ.copy(qy.multiply(q));
       cam.quaternion.slerp(this._camQ, 1 - Math.exp(-dt * 12));
     }
-    if ((this._st = (this._st || 0) + dt) > 1) {
+    this._qrTick(dt);
+    if ((this._st = (this._st || 0) + dt) > 0.3) {
       this._st = 0;
-      this._status(this.orient.hasTrueNorth ? `heading ${this.orient.getHeading()?.toFixed(0)}°` : 'no compass — use heading trim');
+      const hd = this.orient.hasTrueNorth ? `${this.orient.getHeading()?.toFixed(0)}°` : 'ไม่มีเข็มทิศ';
+      const stp = this.stepsActive && this.stepsActive() ? ` · ${this.stepCount()} ก้าว` : ' · Steps ปิด';
+      this._status(`${hd}${stp}`);
+      this._syncSteps();
     }
   }
   _cleanupCam() {
     const v = this.viewer;
+    this.qrLock = false;
     this._unbindDrag();
     v.hooks.delete(this._camHook);
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());

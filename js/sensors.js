@@ -159,7 +159,7 @@ export class DeviceOrient extends EventTarget {
 export class StepTracker extends EventTarget {
   constructor() {
     super();
-    this.active = false; this.count = 0; this.threshold = 1.3;
+    this.active = false; this.count = 0; this.threshold = 0.8; this.signal = 0;
     this._ema = 9.81; this._sm = 0; this._prev = 0; this._last = 0;
     this._on = (e) => this._motion(e);
   }
@@ -178,9 +178,10 @@ export class StepTracker extends EventTarget {
     if (!a) return;
     const m = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
     this._ema += (m - this._ema) * 0.02;       // slow mean ≈ gravity
-    this._sm = this._sm * 0.6 + (m - this._ema) * 0.4; // smoothed high-pass
+    this._sm = this._sm * 0.5 + (m - this._ema) * 0.5; // light smoothing: a phone held steadily gives only ~1 m/s² bounce
+    this.signal = this._sm;
     const t = e.timeStamp || performance.now();
-    if (this._sm > this.threshold && this._prev <= this.threshold && t - this._last > 300) {
+    if (this._sm > this.threshold && this._prev <= this.threshold && t - this._last > 320) {
       this._last = t; this.count++;
       this.dispatchEvent(new Event('step'));
     }

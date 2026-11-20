@@ -10,11 +10,12 @@ import { gpsToModel, modelToGps, ifcToRaw, rawToIfc, gpsToEN, bearingFromPair, n
 import { GPS, DeviceOrient, StepTracker } from './sensors.js';
 import { ARController, xrARSupported } from './ar.js';
 import { exportBCF, importBCF } from './bcf.js';
-import { encodeCP, decodeCP, cpSheet, startScan } from './qr.js';
+import { encodeCP, decodeCP, cpSheet, startScan, decodeImageFile } from './qr.js';
+import { poseFromDetection, poseToModel } from './pose.js';
 
 // ================================================================ settings
 const SETTINGS_KEY = 'sitear.settings', LAST_KEY = 'sitear.lastProject';
-const settings = { author: '', eye: 1.6, fov: 60, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
+const settings = { author: '', eye: 1.6, fov: 60, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, stepSens: 0.8, trackMode: 'hybrid', qrSize: 0.2, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { /* private mode */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
@@ -44,7 +45,9 @@ viewer.orientSource = orient;
 const ar = new ARController({
   viewer, orient, video: $('#camfeed'), overlay: $('#ar-overlay'), settings, toast,
   getRefs, getPositionRaw: () => app.loc.raw, getBearing, onMark: createMarkupFromAR,
-  getFaceHeading, toggleSteps: () => toggleSteps(), stepsActive: () => steps.active
+  getFaceHeading, toggleSteps: () => cycleTrack(), stepsActive: () => steps.active, trackLabel: () => TRACK_LABEL[settings.trackMode],
+  manualStep: () => doStep(false), stepCount: () => app._stepN || 0,
+  onQrDetect: (det, K) => onQrDetect(det, K)
 });
 ar.addEventListener('end', () => { syncModeUI(); });
 
@@ -121,7 +124,7 @@ const RIBBON = [
       { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'แตะตำแหน่งที่ยืนอยู่บนแบบ' },
       { cmd: 'mode-walk', icon: 'walk', label: 'Walk' },
       { cmd: 'walk-track', icon: 'walk', label: 'Walk Track', tip: 'โหมดคนเดิน: เดินจริง → โมเดลขยับตามก้าว + หันตามมือถือ' },
-      { cmd: 'steps', icon: 'path', label: 'Steps', tip: 'นับก้าว: ขยับตำแหน่งตามที่เดิน (ไม่ใช้ GPS ใช้ในอาคารได้)' },
+      { cmd: 'track-mode', icon: 'path', label: 'Tracking', tip: 'สลับวิธีตามตำแหน่ง: Hybrid (นับก้าว+GPS) → Steps (นับก้าวอย่างเดียว) → GPS' },
       { cmd: 'gyro', icon: 'gyro', label: 'Gyro Look', tip: 'หันมือถือเพื่อมองรอบ' },
       { cmd: 'follow', icon: 'follow', label: 'Follow GPS' }] },
     { label: 'Setup', items: [{ cmd: 'settings', icon: 'sliders', label: 'Settings' }] }] },
@@ -180,6 +183,7 @@ async function onCommand(cmd) {
     case 'self-mark': return startSelfMark();
     case 'face-point': return startFacePoint();
     case 'steps': return toggleSteps();
+    case 'track-mode': return cycleTrack();
     case 'walk-track': return startWalkTrack();
     case 'set-location': return anchorWizard();
     case 'gps': return toggleGPS();
@@ -243,7 +247,8 @@ function setMode(m) {
 }
 function syncModeUI() {
   $$('#modebar [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === viewer.mode || (b.dataset.mode === 'ar' && (viewer.mode === 'xr' || viewer.mode === 'cam-ar'))));
-  $('#joystick').hidden = !(viewer.mode === 'walk' && isTouch);
+  $('#joystick').hidden = !(viewer.mode === 'walk' && isTouch && !app.loc.stepMode);
+  $('#step-btn').hidden = !(viewer.mode === 'walk' && app.loc.stepMode);
   $('#crosshair').hidden = viewer.mode !== 'cam-ar';
   document.body.dataset.mode = viewer.mode;
   syncToggles();
@@ -308,6 +313,7 @@ viewer.addEventListener('tap', async (e) => {
     if (!hit) return clearSelection();
     if (hit.type === 'marker') return selectMarkup(hit.id, false);
     if (hit.type === 'cp') return showCPSheet(app.project.geo.controlPoints.find((c) => c.id === hit.id));
+    // (control points keep full ids in the project; only QR payloads are shortened)
     if (hit.type === 'model' && hit.eid != null) return selectElement(hit);
     setPickReadout(viewer.worldToIfc(hit.point));
     return clearSelection();
@@ -891,7 +897,7 @@ async function toggleGPS() {
 // from then on the position = fix + GPS movement since the fix (walking moves you on the plan / in AR).
 function linkFixToGps() {
   const f = app.loc.fix, g = gps.last, P = app.project;
-  if (!f || f.linked || app.loc.stepMode || !g || !gps.active || !(g.acc <= GOOD_GPS_M)) return;
+  if (!f || f.linked || settings.trackMode === 'steps' || !g || !gps.active || !(g.acc <= GOOD_GPS_M)) return;
   if (Date.now() - f.t > 3 * 60 * 1000) return; // fix too old: user has probably walked away from it
   if (P.geo.anchor) {
     const pg = gpsToModel(P.geo.anchor, g.lat, g.lon);
@@ -904,8 +910,22 @@ function linkFixToGps() {
   f.linked = true; f.t = g.t;
   toast('GPS ผูกกับจุด I\'m Here แล้ว — เดินแล้วตำแหน่งจะขยับตาม', 'ok', 3500);
 }
+// Hybrid tracking: steps move you smoothly; each good GPS reading gently pulls the position back toward GPS,
+// so step drift can never grow without limit (and GPS jitter is averaged out instead of shown directly).
+function fuseGps() {
+  if (settings.trackMode !== 'hybrid' || !app.loc.stepMode) return;
+  const a = app.project.geo.anchor, g = gps.last, f = app.loc.fix;
+  if (!a || !g || !f || !f.linked || !gps.active || !(g.acc <= 12) || Date.now() - g.t > 5000) return;
+  if (g.t === f.lastFuse) return; f.lastFuse = g.t;
+  const pg = gpsToModel(a, g.lat, g.lon);
+  const ex = pg.x + app.loc.corr.x - f.position.x, ey = pg.y + app.loc.corr.y - f.position.y;
+  if (Math.hypot(ex, ey) > Math.max(30, 4 * g.acc)) return; // wild reading: ignore
+  const k = g.acc <= 5 ? 0.08 : g.acc <= 8 ? 0.05 : 0.025;
+  f.position = { ...f.position, x: f.position.x + ex * k, y: f.position.y + ey * k };
+}
 gps.addEventListener('update', () => {
   linkFixToGps();
+  fuseGps();
   computeLoc();
   recordTrack();
   updateStatus();
@@ -922,6 +942,10 @@ function computeLoc() {
   if (a && gpsGood && !app.loc.stepMode && (!app.loc.fix || g.t > app.loc.fix.t)) { // step tracking has priority over GPS
     const p = gpsToModel(a, g.lat, g.lon);
     ifc = { x: p.x + app.loc.corr.x, y: p.y + app.loc.corr.y, z: app.loc.fixZ ?? a.position.z };
+    // GPS-only mode: smooth the jitter (blend 35 % toward each new reading)
+    const prev = app.loc._gpsSm;
+    if (prev && g.t - prev.t < 5000) { ifc.x = prev.x + (ifc.x - prev.x) * 0.35; ifc.y = prev.y + (ifc.y - prev.y) * 0.35; }
+    app.loc._gpsSm = { x: ifc.x, y: ifc.y, t: g.t };
     acc = g.acc;
   } else if (app.loc.fix) { ifc = { ...app.loc.fix.position }; acc = 0.05; }
   app.loc.ifc = ifc; app.loc.acc = acc; app.loc.raw = ifc ? ifcToRaw(ifc) : null;
@@ -1091,11 +1115,19 @@ function cpDialog(ifc) {
       <label class="field"><span>Y (m)</span><input id="cp-y" inputmode="decimal" value="${ifc.y.toFixed(3)}"></label>
       <label class="field"><span>Z (m)</span><input id="cp-z" inputmode="decimal" value="${ifc.z.toFixed(3)}"></label>
     </div>
-    <p class="muted small">พิกัดเป็นระบบเดียวกับไฟล์ IFC (export จาก Revit) · ปัดให้ตรงพิกัดที่เซอร์เวย์จะยิงได้</p></div>`);
+    <p class="muted small">พิกัดเป็นระบบเดียวกับไฟล์ IFC (export จาก Revit) · ปัดให้ตรงพิกัดที่เซอร์เวย์จะยิงได้ · X/Y/Z = <b>กึ่งกลาง QR</b></p>
+    <div class="field-row">
+      <label class="field"><span>ติดตั้งแบบไหน</span><select id="cp-m"><option value="floor">วางบนพื้น</option><option value="wall">ติดผนัง (ตั้งตรง)</option></select></label>
+      <label class="field"><span>ทิศ (°) 0=+Y · 90=+X</span><input id="cp-h" inputmode="decimal" value="0"></label>
+      <label class="field"><span>ขนาด QR จริง (cm)</span><input id="cp-s" inputmode="decimal" value="${Math.round(settings.qrSize * 100)}"></label>
+    </div>
+    <p class="muted small">ใช้ให้แอปคำนวณ <b>ตำแหน่ง+ทิศของกล้อง</b> จากภาพ QR: พื้น → ทิศ = ด้านบนของ QR ชี้ไปทางไหน · ผนัง → ทิศ = หน้า QR หันไปทางไหน · แนะนำ QR 20 cm เล็งห่างไม่เกิน ~2 m · พิมพ์ที่ 100% แล้ววัดขนาดจริงใส่ให้ตรง (ขนาดผิด = ระยะผิดตามสัดส่วน)</p></div>`);
   modal({ title: 'Create QR control point', body, actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Create QR', icon: 'qr', kind: 'primary', onClick: (c) => {
     const p = { x: parseFloat(body.querySelector('#cp-x').value), y: parseFloat(body.querySelector('#cp-y').value), z: parseFloat(body.querySelector('#cp-z').value) };
     if (![p.x, p.y, p.z].every(Number.isFinite)) return toast('พิกัดไม่ถูกต้อง', 'warn');
-    const cp = { id: uuid(), name: body.querySelector('#cp-n').value.trim() || `CP-${n}`, position: p, createdAt: new Date().toISOString() };
+    const size = Math.min(0.19, Math.max(0.05, (parseFloat(body.querySelector('#cp-s').value) || 15) / 100)); // A4 sheet limits the symbol to 19 cm
+    const cp = { id: uuid(), name: body.querySelector('#cp-n').value.trim() || `CP-${n}`, position: p, createdAt: new Date().toISOString(),
+      mount: body.querySelector('#cp-m').value, heading: normDeg(parseFloat(body.querySelector('#cp-h').value) || 0), size };
     if (app.project.geo.anchor) { const g = modelToGps(app.project.geo.anchor, p); cp.lat = g.lat; cp.lon = g.lon; }
     app.project.geo.controlPoints.push(cp); save(); renderBadges(); renderPanel(); c(); showCPSheet(cp);
   } }] });
@@ -1105,21 +1137,56 @@ async function showCPSheet(cp) {
   const url = await cpSheet(cp, app.project.name, encodeCP(cp, app.project.id));
   const body = h(`<div class="qr-sheet"><img src="${url}" alt="QR ${esc(cp.name)}"></div>`);
   modal({ title: `QR · ${cp.name}`, body, actions: [
-    { label: 'Print', icon: 'print', left: true, onClick: () => { const w = window.open(''); if (w) { w.document.write(`<title>${esc(cp.name)}</title><img src="${url}" style="width:100%;max-width:800px" onload="print()">`); w.document.close(); } } },
+    // A4 at 100 %: the sheet is drawn at real scale, so the QR prints at exactly cp.size (check the 10 cm ruler on the sheet)
+    { label: 'Print A4', icon: 'print', left: true, onClick: () => { const w = window.open(''); if (w) { w.document.write(`<title>${esc(cp.name)}</title><style>@page{size:A4;margin:0}html,body{margin:0}img{display:block;width:210mm;height:297mm}</style><img src="${url}" onload="print()">`); w.document.close(); } } },
     { label: 'Download PNG', icon: 'import', kind: 'primary', onClick: () => download(url, `${slug(app.project.name)}_${slug(cp.name)}.png`) }] });
 }
 async function scanQR() {
-  const body = h(`<div class="scan"><video playsinline muted></video><div class="scan-frame"></div><p class="muted small">เล็งกล้องไปที่ QR control point</p></div>`);
+  const body = h(`<div class="scan"><video playsinline muted></video><div class="scan-frame"></div>
+    <p class="muted small" id="sq-msg">เล็งกล้องไปที่ QR control point — หรือใช้ปุ่มด้านล่างถ้าไม่มี QR ตรงหน้า</p>
+    <div class="scan-alt">
+      <button class="btn sm" id="sq-img">${icon('image')}<span>เลือกรูป QR</span></button>
+      <button class="btn sm" id="sq-list">${icon('qr')}<span>เลือกจุดจากรายการ</span></button>
+    </div>
+    <input type="file" id="sq-file" accept="image/*" hidden></div>`);
   let stop = null;
   const md = modal({ title: 'Scan QR', body, cls: 'scan-modal', onClose: () => stop && stop() });
+  const done = (cp) => { if (stop) { stop(); stop = null; } md.close(); applyCPFix(cp); };
+  const noCamera = (why) => { // camera unavailable → keep the dialog, offer the other two ways
+    body.querySelector('video').hidden = true; body.querySelector('.scan-frame').hidden = true;
+    body.querySelector('#sq-msg').textContent = `เปิดกล้องไม่ได้ (${why}) — เลือกรูป QR หรือเลือกจุดจากรายการแทน`;
+  };
+  // 1) pick an image of the QR (gallery / file / screenshot)
+  body.querySelector('#sq-img').onclick = () => body.querySelector('#sq-file').click();
+  body.querySelector('#sq-file').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    body.querySelector('#sq-msg').textContent = 'กำลังอ่าน QR จากรูป…';
+    try {
+      const text = await decodeImageFile(f);
+      const cp = text && decodeCP(text);
+      if (cp) return done(cp);
+      body.querySelector('#sq-msg').textContent = text ? 'รูปนี้เป็น QR แต่ไม่ใช่ของ SiteAR' : 'อ่าน QR จากรูปไม่ได้ — ลองรูปที่ชัดและเห็น QR เต็มกรอบ';
+    } catch (err) { body.querySelector('#sq-msg').textContent = 'เปิดรูปไม่ได้'; }
+  };
+  // 2) choose a control point from the project list (no QR needed)
+  body.querySelector('#sq-list').onclick = () => {
+    const list = app.project.geo.controlPoints;
+    if (!list.length) return toast('ยังไม่มีจุด QR ในโปรเจกต์ — สร้างที่ Site → Create QR', 'warn', 4000);
+    if (stop) { stop(); stop = null; }
+    md.close();
+    const pb = h(`<div class="proj-list">${list.map((c) => `<div class="proj-item" data-id="${c.id}"><div class="proj-icon">${icon('qr')}</div>
+      <div class="proj-main"><b>${esc(c.name)}</b><span class="mono">${fmtM(c.position.x, 2)}, ${fmtM(c.position.y, 2)}, ${fmtM(c.position.z, 2)}</span></div></div>`).join('')}</div>`);
+    const pm = modal({ title: 'ฉันอยู่ที่จุดไหน?', body: pb });
+    pb.onclick = (e) => {
+      const it = e.target.closest('.proj-item'); if (!it) return;
+      const c = list.find((x) => x.id === it.dataset.id); pm.close();
+      applyCPFix({ id: c.id, name: c.name, position: c.position, projectId: app.project.id });
+    };
+  };
   try {
-    stop = await startScan(body.querySelector('video'), (text) => {
-      const cp = decodeCP(text);
-      if (!cp) return;
-      stop(); stop = null; md.close();
-      applyCPFix(cp);
-    });
-  } catch (e) { md.close(); toast(`Camera: ${e.message}`, 'error', 5000); }
+    stop = await startScan(body.querySelector('video'), (text) => { const cp = decodeCP(text); if (cp) done(cp); });
+  } catch (e) { noCamera(e.name === 'NotAllowedError' ? 'ไม่ได้อนุญาตกล้อง' : e.message); }
 }
 // ---------------- self-marking: "I'm here" — tap where you stand (e.g. beside a column). No survey needed.
 function startSelfMark() {
@@ -1203,29 +1270,74 @@ function deviceModelHeading() { // heading of the phone relative to model +Y, de
 }
 async function toggleSteps(force) {
   if (steps.active && force !== true) {
-    steps.stop(); app.loc.stepMode = false; syncToggles(); updateStatus();
+    steps.stop(); app.loc.stepMode = false; syncModeUI(); updateStatus();
     toast('Step tracking ปิด', 'info'); return false;
   }
   if (steps.active) return true;
+  // no I'm-Here yet but we know where GPS puts us: start from that
+  if (!app.loc.fix && app.loc.ifc) app.loc.fix = { id: 'gps', position: { ...app.loc.ifc }, t: Date.now(), linked: true };
   if (!app.loc.fix) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here (หรือ Scan QR)', 'warn', 4500); return false; }
   try { await orient.requestPermission(); orient.start(); await steps.requestPermission(); }
   catch (e) { toast(e.message, 'error'); return false; }
   if (!steps.supported) { toast('อุปกรณ์นี้ไม่มีเซนเซอร์เคลื่อนไหว', 'warn'); return false; }
   steps.start(); app.loc.stepMode = true;
-  syncToggles(); updateStatus();
+  syncModeUI(); updateStatus();
   toast(`Step tracking เปิด — เดินแล้วตำแหน่งจะขยับตามก้าว (ก้าวละ ${settings.stepLen} m)`, 'ok', 3500);
   return true;
 }
-steps.addEventListener('step', () => {
-  const f = app.loc.fix; if (!f) return;
-  const h = deviceModelHeading(); if (h == null) return;
+// one step forward along the phone's facing direction (called by the step counter AND by the manual ▲ button)
+function doStep(auto = true) {
+  const f = app.loc.fix;
+  if (!f) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here', 'warn'); return; }
+  const h = deviceModelHeading();
+  if (h == null) { if (!auto) toast('ยังไม่ได้ค่าทิศจากมือถือ — ขยับมือถือเล็กน้อยหรืออนุญาต Motion', 'warn'); return; }
   const r = THREE.MathUtils.degToRad(h), L = settings.stepLen;
   const pos = { x: f.position.x + Math.sin(r) * L, y: f.position.y + Math.cos(r) * L, z: f.position.z };
-  app.loc.fix = { ...f, position: pos, t: Date.now(), linked: true };
+  app.loc.fix = { ...f, position: pos, t: Date.now() };
+  app.loc.stepMode = true;
   app.project.geo.here = { id: f.id, name: 'steps', method: 'steps', position: { ...pos }, t: Date.now() };
+  app._stepN = (app._stepN || 0) + 1;
   computeLoc(); updateStatus();
-  if ((app._stepN = (app._stepN || 0) + 1) % 10 === 0) save();
-});
+  if (app._stepN % 10 === 0) save();
+}
+steps.addEventListener('step', () => doStep(true));
+steps.threshold = settings.stepSens;
+// floating ▲ button (Walk Track): tap = 1 step, hold = keep walking
+(() => {
+  const b = $('#step-btn'); let tm = null;
+  const stop = () => { clearInterval(tm); tm = null; };
+  b.addEventListener('pointerdown', (e) => { e.preventDefault(); doStep(false); tm = setInterval(() => doStep(false), 450); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
+})();
+
+// ---------------- tracking mode: Hybrid (steps + GPS pull-back) · Steps only · GPS only
+const TRACK_LABEL = { hybrid: 'Hybrid', steps: 'Steps', gps: 'GPS' };
+const TRACK_HELP = {
+  hybrid: 'Hybrid: นับก้าวให้ขยับเนียน + GPS ค่อย ๆ ดึงกลับเมื่อเพี้ยนสะสม',
+  steps: 'Steps: นับก้าวอย่างเดียว (ไม่ใช้ GPS) — ใช้ในอาคารได้ แต่เพี้ยนสะสม กด I\'m Here รีเซ็ตที่เสา',
+  gps: 'GPS: ตามตำแหน่ง GPS อย่างเดียว — เหมาะกลางแจ้ง (±3–10 m) ต้อง Set Location / I\'m Here ก่อน'
+};
+async function setTrackMode(m, quiet) {
+  settings.trackMode = m; saveSettings();
+  if (m === 'gps') {
+    steps.stop(); app.loc.stepMode = false;
+    try { await orient.requestPermission(); orient.start(); } catch (e) { /* compass optional */ }
+    if (!gps.active) await toggleGPS();
+  } else {
+    const ok = await toggleSteps(true);
+    if (!ok) { if (m === 'hybrid' && !gps.active && app.project.geo.anchor) await toggleGPS(); return false; }
+    if (m === 'hybrid' && !gps.active) await toggleGPS();
+    if (m === 'steps' && gps.active) await toggleGPS();
+  }
+  syncModeUI(); updateStatus();
+  if (!quiet) toast(TRACK_HELP[m], 'ok', 5000);
+  return true;
+}
+async function cycleTrack() {
+  const order = ['hybrid', 'steps', 'gps'];
+  await setTrackMode(order[(order.indexOf(settings.trackMode) + 1) % order.length]);
+  return true;
+}
 
 // "Walk Track": virtual walkthrough that follows the real walk (steps) and the phone's direction
 async function startWalkTrack() {
@@ -1245,9 +1357,41 @@ async function startWalkTrack() {
 function applyCPFix(cp) {
   const P = app.project;
   if (cp.projectId && cp.projectId !== P.id) toast('QR นี้มาจากโปรเจกต์อื่น — ใช้พิกัดตาม QR', 'warn', 4000);
-  let rec = P.geo.controlPoints.find((c) => c.id === cp.id);
-  if (!rec) { rec = { id: cp.id || uuid(), name: cp.name, position: cp.position, createdAt: new Date().toISOString() }; P.geo.controlPoints.push(rec); }
+  let rec = findCP(cp);
+  if (!rec) { rec = { id: cp.id || uuid(), name: cp.name, position: cp.position, size: cp.size, mount: cp.mount, heading: cp.heading, createdAt: new Date().toISOString() }; P.geo.controlPoints.push(rec); }
   applyFix(rec, 'qr');
+}
+// QR payloads carry only the first 8 characters of the id (compact = bigger modules), so match by prefix
+function findCP(cp) {
+  const id = String(cp.id || '').replace(/-/g, '');
+  return app.project.geo.controlPoints.find((c) => c.id === cp.id || (id && c.id.replace(/-/g, '').startsWith(id)));
+}
+
+// ---------------- QR pose: camera position + heading from the QR image (called by the AR overlay's QR Lock)
+function onQrDetect(det, K) {
+  const cp0 = decodeCP(det.text);
+  if (!cp0) return { ok: false, msg: 'QR นี้ไม่ใช่ของ SiteAR' };
+  const rec = findCP(cp0);
+  const cp = { name: (rec && rec.name) || cp0.name, position: (rec && rec.position) || cp0.position, size: cp0.size, mount: cp0.mount, heading: cp0.heading };
+  // the QR itself carries the size/mount/heading that were printed; use the project's value if it was corrected later
+  if (rec) { cp.size = rec.size || cp.size; cp.mount = rec.mount || cp.mount; cp.heading = rec.heading ?? cp.heading; }
+  const pose = poseFromDetection(det, cp.size, K.f, K.cx, K.cy);
+  if (!pose) return { ok: false, msg: `${cp.name}: คำนวณไม่ได้` };
+  if (pose.dist > 4) return { ok: false, msg: `${cp.name} ไกลไป (${pose.dist.toFixed(1)} m) — เข้าใกล้ ≤ 2 m` };
+  if (pose.reproj > 8) return { ok: false, msg: `${cp.name}: ภาพไม่ชัด/เอียงเกินไป` };
+  const m = poseToModel(pose, cp);
+  // trust falls with distance: ≤2 m full, 2–3 m half, beyond a quarter
+  const gain = pose.dist <= 2 ? 1 : pose.dist <= 3 ? 0.5 : 0.25;
+  const target = { x: m.position.x, y: m.position.y, z: m.position.z - settings.eye };
+  const f = app.loc.fix, recent = f && f.src === 'qr' && Date.now() - f.t < 2500;
+  const g = recent ? Math.min(gain, 0.5) : gain;
+  const cur = (f && f.position) || target;
+  const pos = { x: cur.x + (target.x - cur.x) * g, y: cur.y + (target.y - cur.y) * g, z: cur.z + (target.z - cur.z) * g };
+  app.loc.fix = { id: (rec && rec.id) || cp0.id, position: pos, t: Date.now(), src: 'qr', linked: f && f.linked };
+  if (settings.trackMode !== 'gps') app.loc.stepMode = true; // hold the QR position; steps continue from here
+  app.project.geo.here = { id: app.loc.fix.id, name: cp.name, method: 'qr-pose', position: { ...pos }, t: Date.now() };
+  computeLoc(); updateStatus();
+  return { ok: true, heading: m.heading, gain: g, msg: `${cp.name} ✓ ${pose.dist.toFixed(1)} m` };
 }
 // Lock "my position" to a known model point (QR scan or self-mark). With GPS on it also corrects GPS drift.
 function applyFix(rec, method) {
@@ -1299,8 +1443,7 @@ async function startCamAR() {
   try {
     clearSelection(); setTool('select');
     await ar.startCamera();
-    if (app.loc.fix) toggleSteps(true);                       // I'm Here / QR set → follow real steps automatically
-    else if (!gps.active && app.project.geo.anchor) toggleGPS(); // otherwise fall back to GPS
+    if (app.loc.fix || app.project.geo.anchor) setTrackMode(settings.trackMode, true); // follow the user's walking automatically
     syncModeUI();
   } catch (e) { console.error(e); toast(`Camera AR: ${e.message}`, 'error', 5000); }
 }
@@ -1376,6 +1519,8 @@ function settingsDialog() {
       <label class="field"><span>Camera AR FOV (°)</span><input id="st-f" inputmode="decimal" value="${settings.fov}"></label>
       <label class="field"><span>ความยาวก้าว (m)</span><input id="st-sl" inputmode="decimal" value="${settings.stepLen}"></label>
     </div>
+    <label class="field"><span>ความไวนับก้าว (ซ้าย = ไวมาก, ขวา = ไวน้อย)</span><input id="st-ss" type="range" min="0.3" max="2" step="0.1" value="${settings.stepSens}"></label>
+    <p class="muted small">ถ้าเดินแล้วตัวเลขก้าวไม่ขึ้น ให้เลื่อนไปทางซ้าย · ถ้าก้าวขึ้นทั้งที่ยืนนิ่งให้เลื่อนไปทางขวา · ใช้ปุ่ม ▲ เดินเองเป็นตัวสำรองได้</p>
     <div class="field-row">
       <label class="field"><span>AR model opacity</span><input id="st-o" type="range" min="0.1" max="1" step="0.05" value="${settings.arOpacity}"></label>
       <label class="field"><span>GPS averaging (s)</span><input id="st-g" inputmode="numeric" value="${settings.gpsAvg}"></label>
@@ -1392,6 +1537,7 @@ function settingsDialog() {
     settings.arOpacity = parseFloat(body.querySelector('#st-o').value);
     settings.gpsAvg = Math.min(60, Math.max(2, parseInt(body.querySelector('#st-g').value, 10) || 8));
     settings.stepLen = Math.min(1.2, Math.max(0.3, parseFloat(body.querySelector('#st-sl').value) || 0.7));
+    settings.stepSens = parseFloat(body.querySelector('#st-ss').value) || 0.8; steps.threshold = settings.stepSens;
     settings.scopeFactor = Math.min(20, Math.max(1.5, parseFloat(body.querySelector('#st-sc').value) || 3));
     viewer.scopeFactor = settings.scopeFactor; viewer.invalidateScope();
     viewer.walk.eye = settings.eye; saveSettings(); c(); toast('Settings saved', 'ok');
@@ -1411,7 +1557,7 @@ function updateStatus() {
   const an = $('#st-anchor');
   an.dataset.s = a ? 'good' : 'off';
   an.dataset.s = a || app.loc.fix ? 'good' : 'off';
-  const fixLabel = app.loc.fix ? (app.loc.stepMode ? ' · Steps' : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
+  const fixLabel = app.loc.fix ? (app.loc.stepMode ? (settings.trackMode === 'hybrid' ? ' · Hybrid' : ' · Steps') : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
   an.innerHTML = `${icon('anchor')}<span>${a ? `N ${getBearing().toFixed(1)}°` : app.loc.fix ? 'Here' : 'No location'}${fixLabel}</span>`;
 }
 viewer.addEventListener('frame', () => {
