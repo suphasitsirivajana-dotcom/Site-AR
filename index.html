@@ -123,8 +123,9 @@
 
   <div id="modal-root"></div>
   <div id="toasts"></div>
-  <input type="file" id="file-model" accept=".ifc,.dxf,.glb,.gltf,.obj" multiple hidden>
-  <input type="file" id="file-project" accept=".json,.bcf,.bcfzip,.zip" hidden>
+  <!-- no accept filter on purpose: iOS greys out unknown extensions like .ifc. The app checks the extension itself. -->
+  <input type="file" id="file-model" multiple hidden>
+  <input type="file" id="file-project" hidden>
 
   <script type="module" src="js/main.js"></script>
 </body>
