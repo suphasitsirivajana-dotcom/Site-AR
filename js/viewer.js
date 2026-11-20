@@ -683,9 +683,13 @@ export class Viewer extends EventTarget {
     });
     c.addEventListener('pointermove', (e) => {
       if (!down || down.id !== e.pointerId) return;
-      if (this.mode === 'walk' && !this.navLocked && !this.walk.gyro) {
+      if (this.mode === 'walk' && !this.navLocked) {
         const dx = e.clientX - down.lx, dy = e.clientY - down.ly;
-        this.walk.yaw -= dx * 0.0045; this.walk.pitch = THREE.MathUtils.clamp(this.walk.pitch - dy * 0.0045, -1.45, 1.45);
+        if (!this.walk.gyro) { this.walk.yaw -= dx * 0.0045; this.walk.pitch = THREE.MathUtils.clamp(this.walk.pitch - dy * 0.0045, -1.45, 1.45); }
+        else { // gyro look: dragging left/right trims the heading so the model lines up with the real world
+          this.headingTrim = (this.headingTrim || 0) + dx * 0.12;
+          if (this.orientSource) { if (this.orientSource.yawOffset === null) this.orientSource.yawOffset = 0; this.orientSource.manual = true; }
+        }
       }
       down.lx = e.clientX; down.ly = e.clientY;
     });

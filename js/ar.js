@@ -6,7 +6,7 @@
 // Both share the same overlay UI and create markups in IFC coordinates.
 import * as THREE from 'three';
 import { icon } from './icons.js';
-import { normDeg180 } from './geo.js';
+import { normDeg180, modelHeadingOfRawDir } from './geo.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -45,9 +45,9 @@ export class ARController extends EventTarget {
         </div>
         <div class="ar-row actions">
           <button class="ar-btn" data-ar="rotl">${icon('rotL')}<span>-1°</span></button>
-          ${kind === 'xr' ? `<button class="ar-btn primary" data-ar="align">${icon('target')}<span>Align here</span></button>` : `<button class="ar-btn primary" data-ar="recal">${icon('compass')}<span>Recalibrate</span></button>`}
+          ${kind === 'xr' ? `<button class="ar-btn primary" data-ar="align">${icon('target')}<span>Align here</span></button>` : `<button class="ar-btn primary" data-ar="face">${icon('target')}<span>Face</span></button><button class="ar-btn" data-ar="steps">${icon('walk')}<span>Steps</span></button>`}
           <button class="ar-btn accent" data-ar="mark">${icon('pin')}<span>Mark</span></button>
-          ${kind === 'cam' ? `<button class="ar-btn" data-ar="shot">${icon('photo')}<span>Photo</span></button>` : ''}
+          ${kind === 'cam' ? `<button class="ar-btn" data-ar="recal">${icon('compass')}<span>Compass</span></button><button class="ar-btn" data-ar="shot">${icon('photo')}<span>Photo</span></button>` : ''}
           <button class="ar-btn" data-ar="rotr">${icon('rotR')}<span>+1°</span></button>
         </div>
       </div>
@@ -71,7 +71,9 @@ export class ARController extends EventTarget {
       if (a === 'rotl') this._setTrim(this.trim - 1);
       if (a === 'rotr') this._setTrim(this.trim + 1);
       if (a === 'align') this.alignXR();
-      if (a === 'recal') { this.orient.recalibrate(); this.toast('Compass recalibrated — hold the device upright and still', 'info'); }
+      if (a === 'recal') { this.orient.recalibrate(); this._setTrim(0); this.toast('กลับไปใช้เข็มทิศ — ถือเครื่องตั้งตรงและนิ่ง ๆ', 'info'); }
+      if (a === 'face') this.alignToFace();
+      if (a === 'steps') this.toggleSteps().then(() => this._syncSteps());
       if (a === 'mark') this._beginMark();
       if (a === 'shot') this._beginMark(true);
       if (a === 'qcancel') this._endMark();
@@ -85,10 +87,52 @@ export class ARController extends EventTarget {
     o.querySelector('#ar-quick').onsubmit = (e) => { e.preventDefault(); this._saveMark(); };
     o.querySelector('#ar-ref').onchange = () => { if (this.active === 'xr' && this.aligned) this.alignXR(this._lastW); };
   }
+  _syncSteps() { const b = this.overlay.querySelector('[data-ar=steps]'); if (b) b.classList.toggle('on', !!this.stepsActive()); }
+
+  // Freeze the compass: after the user aligned the view, only the gyro (smooth, drift-free over minutes)
+  // drives rotation. A wobbling compass is what makes the model "lose its direction" when you turn.
+  _freezeCompass() {
+    if (this.orient.yawOffset === null) this.orient.yawOffset = 0;
+    this.orient.manual = true;
+  }
+  // rotate the overlay so the camera's current model-heading equals `target` (deg clockwise from model +Y)
+  alignToHeading(target) {
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(this.viewer.persp.quaternion);
+    if (Math.abs(f.y) > 0.9) { this.toast('เงยหน้าเครื่องให้มองระดับสายตาก่อน แล้วกดอีกครั้ง', 'warn'); return false; }
+    const hm = modelHeadingOfRawDir(f);
+    this._freezeCompass();
+    this._setTrim(this.trim + normDeg180(hm - target)); // +trim turns the camera CCW → heading decreases
+    return true;
+  }
+  alignToFace() {
+    const h = this.getFaceHeading && this.getFaceHeading();
+    if (h == null) return this.toast('ยังไม่มี Face Point — ออกจาก AR แล้วไป Site → Face Point (ต้องตั้งจุดที่ยืนด้วย)', 'warn', 5000);
+    if (this.alignToHeading(h)) this.toast('ล็อกทิศแล้ว — หมุนตัวได้เลย', 'ok', 2500);
+  }
+  // one-finger drag left/right turns the model overlay to match the real world (the drag direction = the way the model moves)
+  _bindDrag() {
+    const c = this.viewer.canvas; let d = null;
+    this._pd = (e) => { if (this.active === 'cam' && !this._pending) d = { id: e.pointerId, x: e.clientX }; };
+    this._pm = (e) => {
+      if (!d || d.id !== e.pointerId) return;
+      const dx = e.clientX - d.x; d.x = e.clientX;
+      this._freezeCompass();
+      this._setTrim(this.trim + dx * 0.12);
+    };
+    this._pu = () => { d = null; };
+    c.addEventListener('pointerdown', this._pd); c.addEventListener('pointermove', this._pm);
+    c.addEventListener('pointerup', this._pu); c.addEventListener('pointercancel', this._pu);
+  }
+  _unbindDrag() {
+    const c = this.viewer.canvas;
+    c.removeEventListener('pointerdown', this._pd); c.removeEventListener('pointermove', this._pm);
+    c.removeEventListener('pointerup', this._pu); c.removeEventListener('pointercancel', this._pu);
+  }
+
   _status(t) { const s = this.overlay.querySelector('#ar-status'); if (s) s.textContent = t; }
   _hint(t) { const s = this.overlay.querySelector('#ar-hint'); if (s) { s.textContent = t; s.hidden = !t; } }
   _setTrim(v, syncSlider = true) {
-    this.trim = Math.max(-180, Math.min(180, v));
+    this.trim = normDeg180(v);
     const s = this.overlay.querySelector('#ar-trim'); if (s && syncSlider) s.value = this.trim;
     const l = this.overlay.querySelector('#ar-trim-v'); if (l) l.textContent = `${this.trim.toFixed(1)}°`;
     if (this.active === 'xr' && this.aligned) this.alignXR(this._lastW);
@@ -251,8 +295,13 @@ export class ARController extends EventTarget {
     document.body.classList.add('cam-ar');
     this._camHook = (dt) => this._camFrame(dt);
     v.hooks.add(this._camHook);
+    this._bindDrag();
     this._status(this.orient.hasTrueNorth ? 'compass OK' : 'waiting for compass…');
-    this._hint(this.getPositionRaw() ? '' : 'No position yet — scan a QR control point or start GPS (Site tab).');
+    this._hint(this.getPositionRaw()
+      ? 'โมเดลไม่ตรงกับของจริง? ลากนิ้วซ้าย/ขวาเพื่อหมุนให้ตรง · หรือหันไปที่ Face Point แล้วกด Face'
+      : 'ยังไม่มีตำแหน่ง — ตั้งจุดที่ยืน (Site → I\'m Here), Scan QR หรือเปิด GPS');
+    setTimeout(() => this._hint(''), 8000);
+    this._syncSteps();
   }
   _camFrame(dt) {
     const v = this.viewer, cam = v.persp;
@@ -272,6 +321,7 @@ export class ARController extends EventTarget {
   }
   _cleanupCam() {
     const v = this.viewer;
+    this._unbindDrag();
     v.hooks.delete(this._camHook);
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null; this.video.srcObject = null; this.video.hidden = true;

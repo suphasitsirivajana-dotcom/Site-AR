@@ -393,6 +393,7 @@ summary { cursor: pointer; font-size: 12px; padding: 4px 0; color: var(--text-2)
 .ar-field select { padding: 6px 8px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text); }
 .ar-field input[type=range] { accent-color: var(--accent); width: 100%; }
 .ar-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 56px; height: 56px; padding: 0 10px; border-radius: 14px; background: var(--surface-2); color: var(--text); font-size: 11px; border: 1px solid var(--line-2); }
+.ar-btn.on { background: rgba(56,225,255,.16); color: var(--accent); border-color: rgba(56,225,255,.5); }
 .ar-btn.icon-only { min-width: 44px; height: 44px; border-radius: 50%; background: rgba(8,10,14,.7); }
 .ar-btn.primary { background: var(--text); color: #05070a; min-width: 84px; }
 .ar-btn.accent { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #05070a; min-width: 84px; border: 0; box-shadow: 0 0 24px rgba(56,225,255,.45); }

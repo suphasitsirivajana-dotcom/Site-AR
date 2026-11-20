@@ -6,15 +6,15 @@ import { store } from './store.js';
 import { Ribbon, toast, hint, hideHint, modal, confirmBox, promptBox, download, fileToDataURL, $, $$, h, esc } from './ui.js';
 import { icon, LOGO } from './icons.js';
 import { newProject, newMarkup, uuid, MARKUP_TYPES, STATUSES, PRIORITIES, statusColor, markupTitle, timeAgo, SCHEMA } from './project.js';
-import { gpsToModel, modelToGps, ifcToRaw, rawToIfc, gpsToEN, bearingFromPair, normDeg, fmtM, fmtLL } from './geo.js';
-import { GPS, DeviceOrient } from './sensors.js';
+import { gpsToModel, modelToGps, ifcToRaw, rawToIfc, gpsToEN, bearingFromPair, normDeg, modelHeadingOfRawDir, fmtM, fmtLL } from './geo.js';
+import { GPS, DeviceOrient, StepTracker } from './sensors.js';
 import { ARController, xrARSupported } from './ar.js';
 import { exportBCF, importBCF } from './bcf.js';
 import { encodeCP, decodeCP, cpSheet, startScan } from './qr.js';
 
 // ================================================================ settings
 const SETTINGS_KEY = 'sitear.settings', LAST_KEY = 'sitear.lastProject';
-const settings = { author: '', eye: 1.6, fov: 60, arOpacity: 0.75, gpsAvg: 8, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
+const settings = { author: '', eye: 1.6, fov: 60, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { /* private mode */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
@@ -39,10 +39,12 @@ viewer.scopeOn = settings.scope; viewer.scopeFactor = settings.scopeFactor;
 viewer.addEventListener('scope-limit', () => toast('ถึงขอบ Scope box — กด Home หรือปิด Scope ใน View', 'info', 1400));
 const gps = new GPS();
 const orient = new DeviceOrient();
+const steps = new StepTracker();
 viewer.orientSource = orient;
 const ar = new ARController({
   viewer, orient, video: $('#camfeed'), overlay: $('#ar-overlay'), settings, toast,
-  getRefs, getPositionRaw: () => app.loc.raw, getBearing, onMark: createMarkupFromAR
+  getRefs, getPositionRaw: () => app.loc.raw, getBearing, onMark: createMarkupFromAR,
+  getFaceHeading, toggleSteps: () => toggleSteps(), stepsActive: () => steps.active
 });
 ar.addEventListener('end', () => { syncModeUI(); });
 
@@ -98,6 +100,7 @@ const RIBBON = [
   { id: 'site', label: 'Site', groups: [
     { label: 'Location', items: [
       { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'Self-mark: แตะตำแหน่งที่ยืนอยู่บนแบบ (เช่น ข้างเสา) — ง่ายสุด ไม่ต้องเซอร์เวย์' },
+      { cmd: 'face-point', icon: 'target', label: 'Face Point', tip: 'แตะจุดที่คุณกำลังหันหน้าไปหา (เช่น เสาต้นข้างหน้า) เพื่อล็อกทิศ' },
       { cmd: 'set-location', icon: 'anchor', label: 'Set Location', tip: 'ยืนที่จุดหนึ่ง → แตะจุดเดียวกันบนแบบ → จับ GPS' },
       { cmd: 'gps', icon: 'gps', label: 'Locate Me', tip: 'เปิด GPS แสดงตำแหน่งบนแบบ' },
       { cmd: 'follow', icon: 'follow', label: 'Follow', tip: 'กล้อง Walk เดินตาม GPS' }] },
@@ -117,6 +120,8 @@ const RIBBON = [
     { label: 'Walkthrough', items: [
       { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'แตะตำแหน่งที่ยืนอยู่บนแบบ' },
       { cmd: 'mode-walk', icon: 'walk', label: 'Walk' },
+      { cmd: 'walk-track', icon: 'walk', label: 'Walk Track', tip: 'โหมดคนเดิน: เดินจริง → โมเดลขยับตามก้าว + หันตามมือถือ' },
+      { cmd: 'steps', icon: 'path', label: 'Steps', tip: 'นับก้าว: ขยับตำแหน่งตามที่เดิน (ไม่ใช้ GPS ใช้ในอาคารได้)' },
       { cmd: 'gyro', icon: 'gyro', label: 'Gyro Look', tip: 'หันมือถือเพื่อมองรอบ' },
       { cmd: 'follow', icon: 'follow', label: 'Follow GPS' }] },
     { label: 'Setup', items: [{ cmd: 'settings', icon: 'sliders', label: 'Settings' }] }] },
@@ -173,6 +178,9 @@ async function onCommand(cmd) {
     case 'grid': settings.grid = !settings.grid; saveSettings(); viewer.setGrid(settings.grid); return syncToggles();
     case 'nav-lock': viewer.setNavLocked(!viewer.navLocked); toast(viewer.navLocked ? 'View locked' : 'View unlocked', 'info'); return syncToggles();
     case 'self-mark': return startSelfMark();
+    case 'face-point': return startFacePoint();
+    case 'steps': return toggleSteps();
+    case 'walk-track': return startWalkTrack();
     case 'set-location': return anchorWizard();
     case 'gps': return toggleGPS();
     case 'follow': viewer.walk.follow = !viewer.walk.follow; if (viewer.walk.follow) { if (!gps.active) await toggleGPS(); setMode('walk'); } return syncToggles();
@@ -203,6 +211,9 @@ function syncToggles() {
   ribbon.setActive('grid', settings.grid);
   ribbon.setActive('nav-lock', viewer.navLocked);
   ribbon.setActive('scope', settings.scope);
+  ribbon.setActive('steps', steps.active);
+  ribbon.setActive('walk-track', steps.active && viewer.walk.gyro && viewer.walk.follow && viewer.mode === 'walk');
+  ribbon.setActive('face-point', app.tool === 'face');
   ribbon.setActive('gps', gps.active);
   ribbon.setActive('follow', viewer.walk.follow);
   ribbon.setActive('gyro', viewer.walk.gyro);
@@ -226,6 +237,7 @@ function setMode(m) {
   if (ar.active) ar.stop();
   const first = m === 'plan' && !app._planSeen;
   viewer.setMode(m);
+  if (m === 'plan' && !app._planHint) { app._planHint = true; toast('โหมด Plan: ลากเพื่อเลื่อน · ซูมด้วยสองนิ้ว · หมุนโมเดลไม่ได้ — กด 3D เพื่อหมุน', 'info', 4500); }
   if (first) { app._planSeen = true; if (!viewer.clipOn) setSection(true); viewer.fitAll(); }
   syncModeUI();
 }
@@ -238,8 +250,16 @@ function syncModeUI() {
 }
 // Ground points (anchor / QR) are picked most accurately on a cut plan, not on the roof in 3D
 function goPlanForPicking() {
+  // remember where the user was, so we can put them back (otherwise they stay stuck in Plan, which cannot rotate)
+  if (!app.prePick) app.prePick = { mode: viewer.mode, clip: viewer.clipOn };
   if (viewer.mode !== 'plan') setMode('plan');
   if (!viewer.clipOn) setSection(true);
+}
+function restorePickMode() {
+  const p = app.prePick; app.prePick = null;
+  if (!p) return;
+  if (p.mode !== viewer.mode && (p.mode === 'orbit' || p.mode === 'walk')) setMode(p.mode);
+  if (!p.clip && viewer.clipOn) setSection(false);
 }
 // ---------------- Home view (like the Revit ViewCube home)
 function goHome() {
@@ -261,7 +281,7 @@ function setTool(t, data = null) {
   document.body.dataset.tool = t;
   syncToggles();
 }
-function cancelTool() { setTool('select'); }
+function cancelTool() { setTool('select'); restorePickMode(); }
 document.addEventListener('keydown', (e) => {
   if (/input|textarea|select/i.test(e.target.tagName) || $('#modal-root').children.length) return;
   if (e.key === 'Escape') cancelTool();
@@ -298,10 +318,11 @@ viewer.addEventListener('tap', async (e) => {
   const data = app.toolData;
   setTool('select');
   if (tool === 'place') return createMarkupAt(hit, ifc, data);
-  if (tool === 'anchor') return anchorStep2(ifc);
-  if (tool === 'cp') return cpDialog(ifc);
-  if (tool === 'second') return twoPointStep2(ifc);
-  if (tool === 'self') return selfMarkAt(hit, ifc);
+  if (tool === 'anchor') { restorePickMode(); return anchorStep2(ifc); }
+  if (tool === 'cp') { restorePickMode(); return cpDialog(ifc); }
+  if (tool === 'second') { restorePickMode(); return twoPointStep2(ifc); }
+  if (tool === 'self') { await selfMarkAt(hit, ifc); return restorePickMode(); }
+  if (tool === 'face') { facePointAt(ifc); return restorePickMode(); }
 });
 viewer.addEventListener('dbltap', (e) => {
   if (viewer.mode !== 'orbit') return;
@@ -330,6 +351,7 @@ function touch(m) { m.modifiedAt = new Date().toISOString(); save(); refreshMark
 async function openProject(p) {
   for (const o of [...viewer.models.children]) viewer.removeModel(o.userData.modelId);
   viewer.hasOffset = false; viewer.root.position.set(0, 0, 0); viewer.root.updateMatrixWorld(true);
+  steps.stop(); app.loc.stepMode = false; app.prePick = null;
   app.project = p; app.sel = null; app.elSel = null; app.loc.corr = { x: 0, y: 0 }; app.loc.fix = null;
   // migrate older/foreign files
   p.geo = p.geo || { anchor: null, controlPoints: [] }; p.geo.controlPoints = p.geo.controlPoints || [];
@@ -869,7 +891,7 @@ async function toggleGPS() {
 // from then on the position = fix + GPS movement since the fix (walking moves you on the plan / in AR).
 function linkFixToGps() {
   const f = app.loc.fix, g = gps.last, P = app.project;
-  if (!f || f.linked || !g || !gps.active || !(g.acc <= GOOD_GPS_M)) return;
+  if (!f || f.linked || app.loc.stepMode || !g || !gps.active || !(g.acc <= GOOD_GPS_M)) return;
   if (Date.now() - f.t > 3 * 60 * 1000) return; // fix too old: user has probably walked away from it
   if (P.geo.anchor) {
     const pg = gpsToModel(P.geo.anchor, g.lat, g.lon);
@@ -897,7 +919,7 @@ function computeLoc() {
   // GPS only wins when it is genuinely good (phones outdoors ≈ 3–15 m). PC/Wi-Fi/IP locations
   // (hundreds of metres) must never override a self-mark or QR fix.
   const gpsGood = g && gps.active && Number.isFinite(g.acc) && g.acc <= GOOD_GPS_M && Date.now() - g.t < 15000;
-  if (a && gpsGood && (!app.loc.fix || g.t > app.loc.fix.t)) {
+  if (a && gpsGood && !app.loc.stepMode && (!app.loc.fix || g.t > app.loc.fix.t)) { // step tracking has priority over GPS
     const p = gpsToModel(a, g.lat, g.lon);
     ifc = { x: p.x + app.loc.corr.x, y: p.y + app.loc.corr.y, z: app.loc.fixZ ?? a.position.z };
     acc = g.acc;
@@ -926,6 +948,7 @@ function renderBadges() {
   const P = app.project, items = [];
   if (P.geo.anchor) items.push({ raw: ifcToRaw(P.geo.anchor.position), label: 'A', color: '#7c5cff', kind: 'anchor' });
   for (const c of P.geo.controlPoints) items.push({ raw: ifcToRaw(c.position), label: 'QR', color: '#3ddc97', kind: 'cp', id: c.id });
+  if (P.geo.face) items.push({ raw: ifcToRaw(P.geo.face), label: 'F', color: '#ffc145', kind: 'face' });
   viewer.setBadges(items);
 }
 
@@ -1148,6 +1171,77 @@ async function selfMarkAt(hit, ifc) {
   renderTrack();
 }
 
+// ---------------- Face Point: "I'm looking at THIS point of the plan" → locks the view direction without a compass
+function startFacePoint() {
+  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  goPlanForPicking();
+  setTool('face');
+  hint('แตะจุดบนแบบที่คุณ "กำลังหันหน้าไปหา" (เช่น เสาต้นข้างหน้า) — ใน AR กดปุ่ม Face เมื่อกล้องหันไปที่จุดนั้น', cancelTool);
+}
+function facePointAt(ifc) {
+  app.project.geo.face = { x: ifc.x, y: ifc.y, z: ifc.z };
+  save(); renderBadges(); syncToggles();
+  toast('ตั้ง Face Point แล้ว — ใน AR หันกล้องไปที่จุดนั้นแล้วกดปุ่ม Face', 'ok', 5000);
+}
+// heading (deg clockwise from model +Y) from where the user stands to the Face Point
+function getFaceHeading() {
+  const f = app.project.geo.face, me = app.loc.ifc || (app.loc.fix && app.loc.fix.position);
+  if (!f || !me) return null;
+  const dx = f.x - me.x, dy = f.y - me.y;
+  if (Math.hypot(dx, dy) < 0.3) return null;
+  return normDeg((Math.atan2(dx, dy) * 180) / Math.PI);
+}
+
+// ---------------- Step tracking (dead reckoning): every real step moves "you" along the direction the phone faces
+function deviceModelHeading() { // heading of the phone relative to model +Y, deg clockwise
+  if (!orient.ready) return null;
+  const q = orient.getQuaternion();
+  q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(getBearing() + (viewer.headingTrim || 0))));
+  let f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  if (Math.abs(f.y) > 0.85) f = new THREE.Vector3(0, 1, 0).applyQuaternion(q); // pointing at floor/sky: use the device top
+  return modelHeadingOfRawDir(f);
+}
+async function toggleSteps(force) {
+  if (steps.active && force !== true) {
+    steps.stop(); app.loc.stepMode = false; syncToggles(); updateStatus();
+    toast('Step tracking ปิด', 'info'); return false;
+  }
+  if (steps.active) return true;
+  if (!app.loc.fix) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here (หรือ Scan QR)', 'warn', 4500); return false; }
+  try { await orient.requestPermission(); orient.start(); await steps.requestPermission(); }
+  catch (e) { toast(e.message, 'error'); return false; }
+  if (!steps.supported) { toast('อุปกรณ์นี้ไม่มีเซนเซอร์เคลื่อนไหว', 'warn'); return false; }
+  steps.start(); app.loc.stepMode = true;
+  syncToggles(); updateStatus();
+  toast(`Step tracking เปิด — เดินแล้วตำแหน่งจะขยับตามก้าว (ก้าวละ ${settings.stepLen} m)`, 'ok', 3500);
+  return true;
+}
+steps.addEventListener('step', () => {
+  const f = app.loc.fix; if (!f) return;
+  const h = deviceModelHeading(); if (h == null) return;
+  const r = THREE.MathUtils.degToRad(h), L = settings.stepLen;
+  const pos = { x: f.position.x + Math.sin(r) * L, y: f.position.y + Math.cos(r) * L, z: f.position.z };
+  app.loc.fix = { ...f, position: pos, t: Date.now(), linked: true };
+  app.project.geo.here = { id: f.id, name: 'steps', method: 'steps', position: { ...pos }, t: Date.now() };
+  computeLoc(); updateStatus();
+  if ((app._stepN = (app._stepN || 0) + 1) % 10 === 0) save();
+});
+
+// "Walk Track": virtual walkthrough that follows the real walk (steps) and the phone's direction
+async function startWalkTrack() {
+  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!app.loc.fix) return toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here', 'warn', 4500);
+  try { await orient.requestPermission(); orient.start(); } catch (e) { return toast(e.message, 'error'); }
+  if (!(await toggleSteps(true))) return;
+  setMode('walk');
+  viewer.bearing = getBearing();
+  viewer.walk.gyro = true; viewer.walk.follow = true;
+  computeLoc();
+  viewer.persp.position.copy(viewer.ifcToWorld(app.loc.fix.position)).add(new THREE.Vector3(0, viewer.walk.eye, 0));
+  syncToggles();
+  toast('Walk Track: เดินจริง โมเดลขยับตาม · ลากนิ้วซ้าย/ขวาเพื่อหมุนโมเดลให้ตรงกับของจริง', 'ok', 5000);
+}
+
 function applyCPFix(cp) {
   const P = app.project;
   if (cp.projectId && cp.projectId !== P.id) toast('QR นี้มาจากโปรเจกต์อื่น — ใช้พิกัดตาม QR', 'warn', 4000);
@@ -1205,7 +1299,8 @@ async function startCamAR() {
   try {
     clearSelection(); setTool('select');
     await ar.startCamera();
-    if (!gps.active && app.project.geo.anchor && !app.loc.fix) toggleGPS();
+    if (app.loc.fix) toggleSteps(true);                       // I'm Here / QR set → follow real steps automatically
+    else if (!gps.active && app.project.geo.anchor) toggleGPS(); // otherwise fall back to GPS
     syncModeUI();
   } catch (e) { console.error(e); toast(`Camera AR: ${e.message}`, 'error', 5000); }
 }
@@ -1279,6 +1374,7 @@ function settingsDialog() {
     <div class="field-row">
       <label class="field"><span>Eye height (m)</span><input id="st-e" inputmode="decimal" value="${settings.eye}"></label>
       <label class="field"><span>Camera AR FOV (°)</span><input id="st-f" inputmode="decimal" value="${settings.fov}"></label>
+      <label class="field"><span>ความยาวก้าว (m)</span><input id="st-sl" inputmode="decimal" value="${settings.stepLen}"></label>
     </div>
     <div class="field-row">
       <label class="field"><span>AR model opacity</span><input id="st-o" type="range" min="0.1" max="1" step="0.05" value="${settings.arOpacity}"></label>
@@ -1295,6 +1391,7 @@ function settingsDialog() {
     settings.fov = Math.min(100, Math.max(30, parseFloat(body.querySelector('#st-f').value) || 60));
     settings.arOpacity = parseFloat(body.querySelector('#st-o').value);
     settings.gpsAvg = Math.min(60, Math.max(2, parseInt(body.querySelector('#st-g').value, 10) || 8));
+    settings.stepLen = Math.min(1.2, Math.max(0.3, parseFloat(body.querySelector('#st-sl').value) || 0.7));
     settings.scopeFactor = Math.min(20, Math.max(1.5, parseFloat(body.querySelector('#st-sc').value) || 3));
     viewer.scopeFactor = settings.scopeFactor; viewer.invalidateScope();
     viewer.walk.eye = settings.eye; saveSettings(); c(); toast('Settings saved', 'ok');
@@ -1314,7 +1411,7 @@ function updateStatus() {
   const an = $('#st-anchor');
   an.dataset.s = a ? 'good' : 'off';
   an.dataset.s = a || app.loc.fix ? 'good' : 'off';
-  const fixLabel = app.loc.fix ? (app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
+  const fixLabel = app.loc.fix ? (app.loc.stepMode ? ' · Steps' : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
   an.innerHTML = `${icon('anchor')}<span>${a ? `N ${getBearing().toFixed(1)}°` : app.loc.fix ? 'Here' : 'No location'}${fixLabel}</span>`;
 }
 viewer.addEventListener('frame', () => {
@@ -1399,7 +1496,7 @@ function onOrientation() {
 window.addEventListener('resize', () => { clearTimeout(onOrientation._t); onOrientation._t = setTimeout(onOrientation, 150); });
 onOrientation();
 
-window.sitear = { app, viewer, gps, orient, ar, settings }; // handy for debugging in the browser console
+window.sitear = { app, viewer, gps, orient, ar, settings, steps }; // handy for debugging in the browser console
 
 (async function boot() {
   $('#brand').innerHTML = `${LOGO}<span>Site<b>AR</b></span>`;

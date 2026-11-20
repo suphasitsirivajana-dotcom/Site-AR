@@ -17,6 +17,13 @@ It installs on iPad, phones and PCs (PWA) and works offline after the first visi
 | **AR** | WebXR AR (Android Chrome/ARCore) · Camera AR (iPhone/iPad/any device: camera + gyro + GPS/QR) |
 | **Export** | BCF 3.0 (Revit, Navisworks, Solibri, BIMcollab, Bonsai) · Project JSON · CSV |
 
+## Walkthrough on site (Camera AR / Walk Track)
+1. **Site → I'm Here**: tap where you stand (tap a column to snap to its centre)
+2. *(optional but best)* **Site → Face Point**: tap the point on the plan you are facing (e.g. the next column)
+3. **AR → Camera AR** (see the real world with the model) or **AR → Walk Track** (model only, follows you)
+4. Face the Face Point and press **Face**, or just **drag a finger left/right** until the model lines up with reality — the compass is then frozen and only the gyro turns the view, so it no longer loses direction
+5. **Steps** (on automatically): every real step moves you 0.7 m (AR → Settings → step length) in the direction the phone faces. Works indoors, no GPS needed. Step counting drifts over distance — press **I'm Here** again at the next column to reset
+
 ## 3D controls (Revit-like)
 | Action | Mouse | Touch screen / iPad |
 |---|---|---|
