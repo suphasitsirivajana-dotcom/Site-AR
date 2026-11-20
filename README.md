@@ -17,6 +17,13 @@ It installs on iPad, phones and PCs (PWA) and works offline after the first visi
 | **AR** | WebXR AR (Android Chrome/ARCore) · Camera AR (iPhone/iPad/any device: camera + gyro + GPS/QR) |
 | **Export** | BCF 3.0 (Revit, Navisworks, Solibri, BIMcollab, Bonsai) · Project JSON · CSV |
 
+## Most accurate on iPad/iPhone (web): QR pose lock
+Aim the camera at a printed QR and the app computes the camera's **position and heading** from the image (planar pose from the QR's finder/alignment patterns), then snaps the overlay to it.
+1. **Site → Create QR**: tap the point, choose *floor* or *wall*, the direction and the real QR size (20 cm recommended, max 19 cm on A4)
+2. **Print A4 at 100 %** (the sheet is drawn at real scale; check the 10 cm ruler on the sheet) and fix it exactly on the surveyed point (centre of the QR = the X/Y/Z you entered)
+3. **AR → Camera AR → QR button**: point at the QR from **≤ 2 m**. Simulated accuracy: ~3–12 cm and ≤ 5° at ≤ 2 m; worse beyond 3 m
+4. Between QRs the app follows your steps (Hybrid). Put a QR in every room or about every 5–10 m so errors reset
+
 ## Walkthrough on site (Camera AR / Walk Track)
 1. **Site → I'm Here**: tap where you stand (tap a column to snap to its centre)
 2. *(optional but best)* **Site → Face Point**: tap the point on the plan you are facing (e.g. the next column)
