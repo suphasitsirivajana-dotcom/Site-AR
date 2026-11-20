@@ -17,6 +17,12 @@ It installs on iPad, phones and PCs (PWA) and works offline after the first visi
 | **AR** | WebXR AR (Android Chrome/ARCore) · Camera AR (iPhone/iPad/any device: camera + gyro + GPS/QR) |
 | **Export** | BCF 3.0 (Revit, Navisworks, Solibri, BIMcollab, Bonsai) · Project JSON · CSV |
 
+## Simplest: Walk & Mark (Home → Walk&Mark)
+Plan view only, no camera overlay. 1) tap where you stand (a column snaps to its centre) 2) tap the point you are facing 3) walk — the blue dot follows your steps (hold **▲ เดิน** if a step is missed) — and press **มาร์คตรงนี้**: the pin goes exactly where the dot is (or 1–3 m ahead). At each column press **ตั้งตำแหน่งใหม่** to reset drift. ⟲ ⟳ turn the heading by 10°.
+
+## Best accuracy for AR overlay: Tripod mode (AR → Camera AR → ขาตั้ง)
+Put the phone on a tripod at a known point (I'm Here or the QR button), enter the fixed camera height, and the position is locked (no steps/GPS). Align the heading once (drag / Face / QR), then only pan and tilt. Use the **FOV** slider so the virtual lens matches the phone camera (about 40–50° vertical, default 45°).
+
 ## Most accurate on iPad/iPhone (web): QR pose lock
 Aim the camera at a printed QR and the app computes the camera's **position and heading** from the image (planar pose from the QR's finder/alignment patterns), then snaps the overlay to it.
 1. **Site → Create QR**: tap the point, choose *floor* or *wall*, the direction and the real QR size (20 cm recommended, max 19 cm on A4)

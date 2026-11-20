@@ -79,6 +79,26 @@
         <div id="selchip" class="selchip" hidden></div>
         <div id="joystick" class="joystick" hidden><div class="knob"></div></div>
         <div id="crosshair" class="crosshair" hidden><span></span></div>
+        <!-- Walk & Mark: the simple mode (plan view, tap where you stand, walk, press Mark) -->
+        <div id="wm" class="wm" hidden>
+          <div class="wm-top">
+            <div class="wm-msg" id="wm-msg"></div>
+            <button class="wm-btn" id="wm-exit">ออก</button>
+          </div>
+          <div class="wm-bottom">
+            <div class="wm-left"></div>
+            <div class="wm-center">
+              <div class="wm-ahead" id="wm-ahead" title="มาร์คห่างจากที่ยืนไปข้างหน้ากี่เมตร">
+                <span>ระยะข้างหน้า</span><button data-d="0" class="on">0</button><button data-d="1">1 m</button><button data-d="2">2 m</button><button data-d="3">3 m</button>
+              </div>
+              <button class="wm-mark" id="wm-mark">มาร์คตรงนี้</button>
+            </div>
+            <div class="wm-right">
+              <button class="wm-btn" id="wm-reset">ตั้งตำแหน่งใหม่</button>
+              <div class="wm-rot"><button class="wm-btn" id="wm-rotl" aria-label="หมุนทิศซ้าย">⟲ 10°</button><button class="wm-btn" id="wm-rotr" aria-label="หมุนทิศขวา">10° ⟳</button></div>
+            </div>
+          </div>
+        </div>
         <button id="step-btn" class="step-btn" hidden aria-label="Step forward" title="แตะ = เดิน 1 ก้าว · กดค้าง = เดินต่อเนื่อง">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg><span>เดิน</span>
         </button>

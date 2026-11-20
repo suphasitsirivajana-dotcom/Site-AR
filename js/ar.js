@@ -34,7 +34,7 @@ export class ARController extends EventTarget {
       <div class="ar-top">
         <div class="ar-title"><span class="live-dot"></span>${kind === 'xr' ? 'WebXR AR' : 'Camera AR'}<span class="ar-status" id="ar-status"></span></div>
         <div class="ar-right">
-          ${kind === 'cam' ? `<button class="ar-btn qrb" data-ar="qrlock" aria-label="QR Lock">${icon('qr')}<span>QR</span></button><button class="ar-btn fwd" data-ar="fwd" aria-label="Step forward">${icon('follow')}<span>เดิน</span></button>` : ''}
+          ${kind === 'cam' ? `<button class="ar-btn qrb" data-ar="tripod" aria-label="Tripod">${icon('anchor')}<span>ขาตั้ง</span></button><button class="ar-btn qrb" data-ar="qrlock" aria-label="QR Lock">${icon('qr')}<span>QR</span></button><button class="ar-btn fwd" data-ar="fwd" aria-label="Step forward">${icon('follow')}<span>เดิน</span></button>` : ''}
           <button class="ar-btn icon-only" data-ar="exit" aria-label="Exit AR">${icon('x')}</button>
         </div>
       </div>
@@ -46,6 +46,7 @@ export class ARController extends EventTarget {
           <label class="ar-field grow"><span>Heading trim <b id="ar-trim-v">0°</b></span>
             <input type="range" id="ar-trim" min="-180" max="180" step="0.5" value="0"></label>
           <label class="ar-field"><span>Model</span><input type="range" id="ar-op" min="0.1" max="1" step="0.05" value="${this.settings.arOpacity}"></label>
+          ${kind === 'cam' ? `<label class="ar-field"><span>FOV <b id="ar-fov-v">${Math.round(this.settings.camFov)}°</b></span><input type="range" id="ar-fov" min="28" max="75" step="1" value="${this.settings.camFov}"></label>` : ''}
         </div>
         <div class="ar-row actions">
           <button class="ar-btn" data-ar="rotl">${icon('rotL')}<span>-1°</span></button>
@@ -78,6 +79,7 @@ export class ARController extends EventTarget {
       if (a === 'recal') { this.orient.recalibrate(); this._setTrim(0); this.toast('กลับไปใช้เข็มทิศ — ถือเครื่องตั้งตรงและนิ่ง ๆ', 'info'); }
       if (a === 'face') this.alignToFace();
       if (a === 'qrlock') this._toggleQrLock();
+      if (a === 'tripod') this.toggleTripod().then(() => this._syncTripod());
       if (a === 'steps') this.toggleSteps().then(() => this._syncSteps());
       if (a === 'mark') this._beginMark();
       if (a === 'shot') this._beginMark(true);
@@ -92,7 +94,12 @@ export class ARController extends EventTarget {
       ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => fb.addEventListener(ev, stop));
     }
     o.querySelector('#ar-trim').oninput = (e) => this._setTrim(+e.target.value, false);
-    o.querySelector('#ar-op').oninput = (e) => { this.settings.arOpacity = +e.target.value; this.viewer.setOpacityFactor(+e.target.value); };
+    const fv = o.querySelector('#ar-fov');
+    if (fv) fv.oninput = (e) => { // make the virtual lens match the phone camera: the model's size follows this slider
+      this.settings.camFov = +e.target.value; this.viewer.persp.fov = +e.target.value; this.viewer.persp.updateProjectionMatrix();
+      o.querySelector('#ar-fov-v').textContent = `${Math.round(+e.target.value)}°`;
+    };
+    o.querySelector('#ar-op').oninput =(e) => { this.settings.arOpacity = +e.target.value; this.viewer.setOpacityFactor(+e.target.value); };
     o.querySelector('#ar-qtype').onclick = (e) => {
       const b = e.target.closest('[data-t]'); if (!b) return;
       o.querySelectorAll('#ar-qtype button').forEach((x) => x.classList.toggle('on', x === b));
@@ -100,6 +107,7 @@ export class ARController extends EventTarget {
     o.querySelector('#ar-quick').onsubmit = (e) => { e.preventDefault(); this._saveMark(); };
     o.querySelector('#ar-ref').onchange = () => { if (this.active === 'xr' && this.aligned) this.alignXR(this._lastW); };
   }
+  _syncTripod() { const b = this.overlay.querySelector('[data-ar=tripod]'); if (b) b.classList.toggle('on', !!(this.tripodActive && this.tripodActive())); }
   _syncSteps() {
     const b = this.overlay.querySelector('[data-ar=steps]'); if (!b) return;
     b.classList.add('on');
@@ -343,7 +351,7 @@ export class ARController extends EventTarget {
     this.active = 'cam';
     this._saved = { mode: v.mode, fov: v.persp.fov };
     v.setMode('cam-ar');
-    v.persp.fov = this.settings.fov; v.persp.updateProjectionMatrix();
+    v.persp.fov = this.settings.camFov; v.persp.updateProjectionMatrix();
     v.setOpacityFactor(this.settings.arOpacity);
     document.body.classList.add('cam-ar');
     this._camHook = (dt) => this._camFrame(dt);
@@ -355,7 +363,7 @@ export class ARController extends EventTarget {
       ? 'โมเดลไม่ตรงกับของจริง? ลากนิ้วซ้าย/ขวาเพื่อหมุนให้ตรง · หรือหันไปที่ Face Point แล้วกด Face'
       : 'ยังไม่มีตำแหน่ง — ตั้งจุดที่ยืน (Site → I\'m Here), Scan QR หรือเปิด GPS');
     setTimeout(() => this._hint(''), 8000);
-    this._syncSteps();
+    this._syncSteps(); this._syncTripod();
   }
   _camFrame(dt) {
     const v = this.viewer, cam = v.persp;

@@ -15,7 +15,7 @@ import { poseFromDetection, poseToModel } from './pose.js';
 
 // ================================================================ settings
 const SETTINGS_KEY = 'sitear.settings', LAST_KEY = 'sitear.lastProject';
-const settings = { author: '', eye: 1.6, fov: 60, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, stepSens: 0.8, trackMode: 'hybrid', qrSize: 0.2, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
+const settings = { author: '', eye: 1.6, camFov: 45, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, stepSens: 0.8, trackMode: 'hybrid', qrSize: 0.2, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { /* private mode */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
@@ -47,7 +47,8 @@ const ar = new ARController({
   getRefs, getPositionRaw: () => app.loc.raw, getBearing, onMark: createMarkupFromAR,
   getFaceHeading, toggleSteps: () => cycleTrack(), stepsActive: () => steps.active, trackLabel: () => TRACK_LABEL[settings.trackMode],
   manualStep: () => doStep(false), stepCount: () => app._stepN || 0,
-  onQrDetect: (det, K) => onQrDetect(det, K)
+  onQrDetect: (det, K) => onQrDetect(det, K),
+  toggleTripod: () => toggleTripod(), tripodActive: () => !!app.loc.tripod
 });
 ar.addEventListener('end', () => { syncModeUI(); });
 
@@ -60,6 +61,7 @@ const RIBBON = [
       { cmd: 'projects', icon: 'layers', label: 'Projects', tip: 'โปรเจกต์ที่เก็บในเครื่อง' },
       { cmd: 'save', icon: 'save', label: 'Save', tip: 'ดาวน์โหลดไฟล์โปรเจกต์ (.sitear.json)' }] },
     { label: 'Navigate', items: [
+      { cmd: 'walk-mark', icon: 'walk', label: 'Walk&Mark', tip: 'โหมดง่าย: แตะที่ยืน → เดิน → มาร์คตรงที่ยืน' },
       { cmd: 'mode-orbit', icon: 'orbit', label: '3D', tip: 'หมุนดูโมเดล 3D' },
       { cmd: 'mode-plan', icon: 'plan', label: 'Plan', tip: 'มุมมองแปลน (ตัดระดับ)' },
       { cmd: 'mode-walk', icon: 'walk', label: 'Walk', tip: 'เดินในโมเดล (WASD / จอยสติ๊ก)' },
@@ -181,6 +183,7 @@ async function onCommand(cmd) {
     case 'grid': settings.grid = !settings.grid; saveSettings(); viewer.setGrid(settings.grid); return syncToggles();
     case 'nav-lock': viewer.setNavLocked(!viewer.navLocked); toast(viewer.navLocked ? 'View locked' : 'View unlocked', 'info'); return syncToggles();
     case 'self-mark': return startSelfMark();
+    case 'walk-mark': return startWalkMark();
     case 'face-point': return startFacePoint();
     case 'steps': return toggleSteps();
     case 'track-mode': return cycleTrack();
@@ -248,7 +251,7 @@ function setMode(m) {
 function syncModeUI() {
   $$('#modebar [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === viewer.mode || (b.dataset.mode === 'ar' && (viewer.mode === 'xr' || viewer.mode === 'cam-ar'))));
   $('#joystick').hidden = !(viewer.mode === 'walk' && isTouch && !app.loc.stepMode);
-  $('#step-btn').hidden = !(viewer.mode === 'walk' && app.loc.stepMode);
+  $('#step-btn').hidden = app.wm ? app.wm.state !== 'walk' : !(viewer.mode === 'walk' && app.loc.stepMode);
   $('#crosshair').hidden = viewer.mode !== 'cam-ar';
   document.body.dataset.mode = viewer.mode;
   syncToggles();
@@ -327,6 +330,8 @@ viewer.addEventListener('tap', async (e) => {
   if (tool === 'anchor') { restorePickMode(); return anchorStep2(ifc); }
   if (tool === 'cp') { restorePickMode(); return cpDialog(ifc); }
   if (tool === 'second') { restorePickMode(); return twoPointStep2(ifc); }
+  if (tool === 'wmpos') { await selfMarkAt(hit, ifc); return wmState('face'); }
+  if (tool === 'wmface') return wmSetFacing(ifc);
   if (tool === 'self') { await selfMarkAt(hit, ifc); return restorePickMode(); }
   if (tool === 'face') { facePointAt(ifc); return restorePickMode(); }
 });
@@ -357,7 +362,7 @@ function touch(m) { m.modifiedAt = new Date().toISOString(); save(); refreshMark
 async function openProject(p) {
   for (const o of [...viewer.models.children]) viewer.removeModel(o.userData.modelId);
   viewer.hasOffset = false; viewer.root.position.set(0, 0, 0); viewer.root.updateMatrixWorld(true);
-  steps.stop(); app.loc.stepMode = false; app.prePick = null;
+  steps.stop(); app.loc.stepMode = false; app.loc.tripod = false; app.prePick = null; app.wm = null; document.body.classList.remove('wm'); $('#wm').hidden = true;
   app.project = p; app.sel = null; app.elSel = null; app.loc.corr = { x: 0, y: 0 }; app.loc.fix = null;
   // migrate older/foreign files
   p.geo = p.geo || { anchor: null, controlPoints: [] }; p.geo.controlPoints = p.geo.controlPoints || [];
@@ -491,12 +496,12 @@ function gpsOfPoint(ifc) {
   return null;
 }
 
-async function createMarkupAt(hit, ifc, { type, photo }) {
+async function createMarkupAt(hit, ifc, { type, photo, source }) {
   const author = await ensureAuthor();
   const element = hit.type === 'model' ? await elementInfoFor(hit.modelId, hit.eid) : null;
   const m = newMarkup({ nextNumber: app.project.nextNumber }, {
     type, author, position: ifc, element, gps: gpsOfPoint(ifc),
-    source: viewer.mode === 'plan' ? 'plan' : viewer.mode === 'walk' ? 'walk' : '3d',
+    source: source || (viewer.mode === 'plan' ? 'plan' : viewer.mode === 'walk' ? 'walk' : '3d'),
     viewpoint: viewer.getViewState(), snapshot: viewer.snapshot(720)
   });
   openMarkupEditor(m, true, photo);
@@ -594,7 +599,7 @@ function openMarkupEditor(m, isNew, openCamera = false) {
     collect();
     if (isNew) { draft.number = app.project.nextNumber++; app.project.markups.push(draft); app.sel = draft.id; }
     else Object.assign(m, draft);
-    c(); save(); refreshMarkers(); openPanel('markups'); syncToggles();
+    c(); save(); refreshMarkers(); if (app.wm) renderPanel(); else openPanel('markups'); syncToggles(); // Walk&Mark keeps the map full-screen
     toast(isNew ? `${MARKUP_TYPES[draft.type].label} #${draft.number} created` : 'Saved', 'ok');
   } });
   const md = modal({ title: isNew ? `New ${MARKUP_TYPES[draft.type].label}` : `${MARKUP_TYPES[m.type].label} #${m.number}`, body, actions, wide: true });
@@ -913,7 +918,7 @@ function linkFixToGps() {
 // Hybrid tracking: steps move you smoothly; each good GPS reading gently pulls the position back toward GPS,
 // so step drift can never grow without limit (and GPS jitter is averaged out instead of shown directly).
 function fuseGps() {
-  if (settings.trackMode !== 'hybrid' || !app.loc.stepMode) return;
+  if (settings.trackMode !== 'hybrid' || !app.loc.stepMode || app.loc.tripod) return;
   const a = app.project.geo.anchor, g = gps.last, f = app.loc.fix;
   if (!a || !g || !f || !f.linked || !gps.active || !(g.acc <= 12) || Date.now() - g.t > 5000) return;
   if (g.t === f.lastFuse) return; f.lastFuse = g.t;
@@ -951,7 +956,8 @@ function computeLoc() {
   app.loc.ifc = ifc; app.loc.acc = acc; app.loc.raw = ifc ? ifcToRaw(ifc) : null;
   const hd = orient.ready && orient.hasTrueNorth ? orient.getHeading() : (g && Number.isFinite(g.heading) ? g.heading : null);
   app.loc.heading = hd;
-  viewer.setYou(app.loc.raw, acc, hd == null ? null : hd - getBearing());
+  const hmWM = app.wm ? headingModelNow() : null; // Walk&Mark: arrow = phone heading, or the last heading you set
+  viewer.setYou(app.loc.raw, acc, hmWM != null ? hmWM : hd == null ? null : hd - getBearing());
 }
 function recordTrack() {
   const tr = app.project.tracks[app.project.tracks.length - 1];
@@ -1238,6 +1244,86 @@ async function selfMarkAt(hit, ifc) {
   renderTrack();
 }
 
+// ================================================================ Walk & Mark — the simple mode
+// Plan view. 1) tap where you stand  2) tap the point you are facing  3) walk (steps move the dot) and press Mark.
+// The marker goes exactly where the dot is (optionally 1–3 m ahead). No camera overlay, no compass dependence:
+// the heading comes from tap #2, then the phone's gyro keeps it (or the ⟲ ⟳ buttons / the ▲ walk button).
+function headingModelNow() { // model heading (deg clockwise from +Y): phone if available, else the last set value
+  const d = deviceModelHeading();
+  if (d != null) return d;
+  return app.wm ? app.wm.heading : null;
+}
+async function startWalkMark() {
+  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (ar.active) ar.stop();
+  try { await orient.requestPermission(); orient.start(); } // inside the button tap: iOS needs the gesture
+  catch (e) { toast('ไม่ได้อนุญาตเซนเซอร์ — ใช้ปุ่ม ⟲ ⟳ หมุนทิศเองได้', 'warn', 4500); }
+  app.wm = { state: 'pos', heading: (app.wm && app.wm.heading) || 0, ahead: 0,
+    prev: { mode: viewer.mode, clip: viewer.clipOn, panel: document.body.classList.contains('panel-open') } };
+  document.body.classList.add('wm'); document.body.classList.remove('panel-open');
+  viewer.headingTrim = 0; viewer.setNavLocked(false);
+  setMode('plan'); if (!viewer.clipOn) setSection(true);
+  $('#wm').hidden = false;
+  $$('#wm-ahead [data-d]').forEach((b) => b.classList.toggle('on', b.dataset.d === '0'));
+  setTimeout(() => { viewer.resize(); viewer.ortho.zoom = Math.max(viewer.ortho.zoom, 2.6); viewer.ortho.updateProjectionMatrix(); }, 320);
+  wmState(app.loc.fix ? 'face' : 'pos');
+  syncModeUI();
+}
+function wmState(s) {
+  const wm = app.wm; if (!wm) return;
+  wm.state = s;
+  const msg = $('#wm-msg');
+  if (s === 'pos') { setTool('wmpos'); msg.innerHTML = '<b>1/2</b> แตะจุดที่คุณ<b>ยืนอยู่</b>บนแบบ (แตะที่เสาจะ snap กลางเสา)'; }
+  else if (s === 'face') { setTool('wmface'); msg.innerHTML = '<b>2/2</b> ถือมือถือหันไปทางเดียวกับที่คุณหันหน้า แล้วแตะจุดบนแบบที่คุณ<b>กำลังมองไปหา</b> (เช่น เสาต้นข้างหน้า)'; }
+  else { setTool('select'); msg.innerHTML = 'เดินได้เลย — จุดสีฟ้าขยับตามก้าว (กดค้าง <b>▲ เดิน</b> ถ้านับพลาด) · กด <b>มาร์คตรงนี้</b> เพื่อปักหมุดที่ยืน · ถึงเสาให้กด <b>ตั้งตำแหน่งใหม่</b> เพื่อรีเซ็ต'; }
+  $('#wm-mark').disabled = s !== 'walk';
+  syncModeUI();
+}
+async function wmSetFacing(ifc) {
+  const f = app.loc.fix;
+  if (!f) return wmState('pos');
+  const dx = ifc.x - f.position.x, dy = ifc.y - f.position.y;
+  if (Math.hypot(dx, dy) < 0.5) { toast('จุดใกล้ตัวเกินไป — แตะจุดที่ห่างออกไปข้างหน้า ≥ 1 m', 'warn'); return wmState('face'); }
+  const hm = normDeg((Math.atan2(dx, dy) * 180) / Math.PI);
+  app.wm.heading = hm; viewer.headingTrim = 0;
+  if (orient.ready) orient.setHeadingNow(normDeg(hm + getBearing())); // phone heading := this direction (compass not needed)
+  await toggleSteps(true);
+  wmState('walk');
+  computeLoc();
+}
+function nudgeHeading(d) { // d>0 = clockwise
+  if (orient.ready) { orient.yawOffset = (orient.yawOffset || 0) + d; orient.manual = true; }
+  else if (app.wm) app.wm.heading = normDeg(app.wm.heading + d);
+  computeLoc();
+}
+async function wmMark() {
+  const f = app.loc.fix;
+  if (!f || !app.wm) return toast('ตั้งตำแหน่งก่อน', 'warn');
+  const pos = { ...f.position }, d = app.wm.ahead, h = headingModelNow();
+  if (d > 0 && h != null) { const r = (h * Math.PI) / 180; pos.x += Math.sin(r) * d; pos.y += Math.cos(r) * d; }
+  await createMarkupAt({ type: 'plane' }, pos, { type: 'comment', source: 'walkmark' });
+}
+function wmExit() {
+  const wm = app.wm; if (!wm) return;
+  app.wm = null; document.body.classList.remove('wm'); $('#wm').hidden = true;
+  setTool('select'); restorePickMode();
+  if (wm.prev.mode !== 'plan') setMode(wm.prev.mode);
+  if (!wm.prev.clip && viewer.clipOn) setSection(false);
+  if (wm.prev.panel && window.innerWidth >= 900) document.body.classList.add('panel-open');
+  setTimeout(() => viewer.resize(), 300);
+  syncModeUI();
+}
+$('#wm-exit').onclick = wmExit;
+$('#wm-reset').onclick = () => wmState('pos');
+$('#wm-mark').onclick = wmMark;
+$('#wm-rotl').onclick = () => nudgeHeading(-10);
+$('#wm-rotr').onclick = () => nudgeHeading(10);
+$('#wm-ahead').onclick = (e) => {
+  const b = e.target.closest('[data-d]'); if (!b || !app.wm) return;
+  app.wm.ahead = +b.dataset.d;
+  $$('#wm-ahead [data-d]').forEach((x) => x.classList.toggle('on', x === b));
+};
+
 // ---------------- Face Point: "I'm looking at THIS point of the plan" → locks the view direction without a compass
 function startFacePoint() {
   if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
@@ -1274,6 +1360,7 @@ async function toggleSteps(force) {
     toast('Step tracking ปิด', 'info'); return false;
   }
   if (steps.active) return true;
+  if (app.loc.tripod) { toast('โหมดขาตั้งล็อกตำแหน่งอยู่ — ปล่อยขาตั้งก่อนจึงจะนับก้าว', 'info'); return false; }
   // no I'm-Here yet but we know where GPS puts us: start from that
   if (!app.loc.fix && app.loc.ifc) app.loc.fix = { id: 'gps', position: { ...app.loc.ifc }, t: Date.now(), linked: true };
   if (!app.loc.fix) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here (หรือ Scan QR)', 'warn', 4500); return false; }
@@ -1287,9 +1374,10 @@ async function toggleSteps(force) {
 }
 // one step forward along the phone's facing direction (called by the step counter AND by the manual ▲ button)
 function doStep(auto = true) {
+  if (app.loc.tripod) { if (!auto) toast('โหมดขาตั้งล็อกตำแหน่งอยู่ — กดปุ่มขาตั้งเพื่อปล่อย', 'info'); return; }
   const f = app.loc.fix;
   if (!f) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here', 'warn'); return; }
-  const h = deviceModelHeading();
+  const h = headingModelNow();
   if (h == null) { if (!auto) toast('ยังไม่ได้ค่าทิศจากมือถือ — ขยับมือถือเล็กน้อยหรืออนุญาต Motion', 'warn'); return; }
   const r = THREE.MathUtils.degToRad(h), L = settings.stepLen;
   const pos = { x: f.position.x + Math.sin(r) * L, y: f.position.y + Math.cos(r) * L, z: f.position.z };
@@ -1309,6 +1397,24 @@ steps.threshold = settings.stepSens;
   b.addEventListener('pointerdown', (e) => { e.preventDefault(); doStep(false); tm = setInterval(() => doStep(false), 450); });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
 })();
+
+// ---------------- Tripod: the most accurate setup for AR on the web.
+// Position is LOCKED (no steps, no GPS) at a known point and the camera height is FIXED, so the only unknown
+// left is the heading — set it once with drag / Face / QR, then just pan and tilt the phone on the tripod.
+async function toggleTripod() {
+  if (app.loc.tripod) { app.loc.tripod = false; toast('ปล่อยขาตั้ง — กลับไปตามตำแหน่งปกติ', 'info'); updateStatus(); return false; }
+  if (!app.loc.fix && app.loc.ifc) app.loc.fix = { id: 'tripod', position: { ...app.loc.ifc }, t: Date.now() };
+  if (!app.loc.fix) { toast('ตั้งจุดตั้งขาตั้งก่อน: Site → I\'m Here หรือกดปุ่ม QR ใน AR', 'warn', 5000); return false; }
+  const v = await promptBox('ความสูงกล้องบนขาตั้ง (เมตร)', 'วัดจากพื้นถึงกล้องมือถือ — ใช้ค่าเดิมทุกครั้งที่ตั้งขา', String(settings.eye));
+  if (v === null) return false;
+  const h = parseFloat(v);
+  if (!Number.isFinite(h) || h < 0.3 || h > 3) { toast('ความสูงไม่ถูกต้อง (0.3–3 m)', 'warn'); return false; }
+  settings.eye = h; viewer.walk.eye = h; saveSettings();
+  steps.stop(); app.loc.stepMode = true; app.loc.tripod = true;
+  computeLoc(); updateStatus(); syncToggles();
+  toast(`ล็อกขาตั้งแล้ว · สูง ${h.toFixed(2)} m · ตำแหน่งไม่ขยับ — ลากนิ้วหรือกด Face/QR เพื่อจัดทิศครั้งเดียว`, 'ok', 6000);
+  return true;
+}
 
 // ---------------- tracking mode: Hybrid (steps + GPS pull-back) · Steps only · GPS only
 const TRACK_LABEL = { hybrid: 'Hybrid', steps: 'Steps', gps: 'GPS' };
@@ -1516,7 +1622,7 @@ function settingsDialog() {
     <label class="field"><span>ชื่อผู้บันทึก · Author</span><input id="st-a" value="${esc(settings.author)}"></label>
     <div class="field-row">
       <label class="field"><span>Eye height (m)</span><input id="st-e" inputmode="decimal" value="${settings.eye}"></label>
-      <label class="field"><span>Camera AR FOV (°)</span><input id="st-f" inputmode="decimal" value="${settings.fov}"></label>
+      <label class="field"><span>Camera AR FOV แนวตั้ง (°)</span><input id="st-f" inputmode="decimal" value="${settings.camFov}"></label>
       <label class="field"><span>ความยาวก้าว (m)</span><input id="st-sl" inputmode="decimal" value="${settings.stepLen}"></label>
     </div>
     <label class="field"><span>ความไวนับก้าว (ซ้าย = ไวมาก, ขวา = ไวน้อย)</span><input id="st-ss" type="range" min="0.3" max="2" step="0.1" value="${settings.stepSens}"></label>
@@ -1533,7 +1639,7 @@ function settingsDialog() {
   modal({ title: 'Settings', body, actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Save', kind: 'primary', icon: 'check', onClick: (c) => {
     settings.author = body.querySelector('#st-a').value.trim();
     settings.eye = parseFloat(body.querySelector('#st-e').value) || 1.6;
-    settings.fov = Math.min(100, Math.max(30, parseFloat(body.querySelector('#st-f').value) || 60));
+    settings.camFov = Math.min(75, Math.max(25, parseFloat(body.querySelector('#st-f').value) || 45));
     settings.arOpacity = parseFloat(body.querySelector('#st-o').value);
     settings.gpsAvg = Math.min(60, Math.max(2, parseInt(body.querySelector('#st-g').value, 10) || 8));
     settings.stepLen = Math.min(1.2, Math.max(0.3, parseFloat(body.querySelector('#st-sl').value) || 0.7));
@@ -1557,13 +1663,14 @@ function updateStatus() {
   const an = $('#st-anchor');
   an.dataset.s = a ? 'good' : 'off';
   an.dataset.s = a || app.loc.fix ? 'good' : 'off';
-  const fixLabel = app.loc.fix ? (app.loc.stepMode ? (settings.trackMode === 'hybrid' ? ' · Hybrid' : ' · Steps') : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
+  const fixLabel = app.loc.tripod ? ` · ขาตั้ง ${settings.eye.toFixed(2)} m` : app.loc.fix ? (app.loc.stepMode ? (settings.trackMode === 'hybrid' ? ' · Hybrid' : ' · Steps') : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
   an.innerHTML = `${icon('anchor')}<span>${a ? `N ${getBearing().toFixed(1)}°` : app.loc.fix ? 'Here' : 'No location'}${fixLabel}</span>`;
 }
 viewer.addEventListener('frame', () => {
   const rot = viewer.screenNorth(getBearing());
   $('#compass-needle').style.transform = `rotate(${rot}deg)`;
   if (gps.active || app.loc.fix || orient.listening) computeLoc();
+  if (app.wm && app.wm.state === 'walk' && viewer.youWorld) viewer.followPlan(viewer.youWorld, 0.25);
 });
 viewer.addEventListener('mode', syncModeUI);
 viewer.addEventListener('clip', () => syncToggles());

@@ -90,6 +90,9 @@ export class Viewer extends EventTarget {
     this.plan = new OrbitControls(this.ortho, canvas);
     Object.assign(this.plan, { enableRotate: false, screenSpacePanning: true, enableDamping: false, zoomToCursor: true, zoomSpeed: 1.6, enabled: false });
     this.plan.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN }; // Revit: middle-drag pans
+    this._planUser = false; this._planUserT = 0; // remember when the user last touched the plan (auto-follow pauses)
+    this.plan.addEventListener('start', () => { this._planUser = true; });
+    this.plan.addEventListener('end', () => { this._planUser = false; this._planUserT = performance.now(); });
     this.plan.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 
     this.mode = 'orbit';
@@ -474,6 +477,14 @@ export class Viewer extends EventTarget {
       this.badges.add(s);
     }
     this._refreshSpriteScale();
+  }
+
+  // Walk & Mark: keep the plan centred on "you" (k = how fast), but never fight the user while they pan/zoom
+  followPlan(w, k = 0.25) {
+    if (this.mode !== 'plan' || this._planUser || performance.now() - this._planUserT < 2500) return;
+    const t = this.plan.target, dx = (w.x - t.x) * k, dz = (w.z - t.z) * k;
+    if (Math.hypot(dx, dz) < 1e-4) return;
+    t.x += dx; t.z += dz; this.ortho.position.x += dx; this.ortho.position.z += dz;
   }
 
   // north-arrow rotation for the compass widget (deg, clockwise on screen)

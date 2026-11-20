@@ -1,5 +1,5 @@
 // SiteAR service worker: app shell cache-first, CDN libraries cached on first use → works offline on site.
-const VERSION = 'sitear-v1.1.0';
+const VERSION = 'sitear-v1.2.0';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/viewer.js', './js/loaders.js', './js/geo.js', './js/store.js', './js/project.js', './js/sensors.js',
@@ -30,9 +30,9 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin === location.origin) {
     // app files: network-first so updates arrive, cache fallback offline
-    // cache:'no-cache' = always revalidate with the server, so a new upload shows up immediately (GitHub Pages
-    // otherwise lets the browser reuse a stale copy for ~10 minutes)
-    e.respondWith(fetch(req, { cache: 'no-cache' }).then((res) => {
+    // cache:'reload' = always go to the server (and refresh the browser cache), so a new upload shows up at once and
+    // old/new files can never be mixed (GitHub Pages otherwise lets the browser reuse a stale copy for ~10 minutes)
+    e.respondWith(fetch(req, { cache: 'reload' }).then((res) => {
       if (res.ok) caches.open(VERSION).then((c) => c.put(req, res.clone()));
       return res;
     }).catch(() => caches.match(req).then((r) => r || caches.match('./index.html'))));
