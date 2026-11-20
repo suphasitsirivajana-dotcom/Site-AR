@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sitear.app/schema/sitear-project-1.0.json",
+  "title": "SiteAR project (sitear.project/1.0)",
+  "description": "Shared data contract between the SiteAR PWA, the future Unity app and Revit scripts. ALL positions are IFC/project coordinates in metres, Z-up, right-handed (same as the IFC file exported from Revit).",
+  "type": "object",
+  "required": ["schema", "id", "name", "markups"],
+  "$defs": {
+    "vec3": { "type": "object", "required": ["x", "y", "z"], "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } } },
+    "viewState": {
+      "type": "object",
+      "description": "Camera. position/target/up are IFC coords (m).",
+      "properties": {
+        "mode": { "enum": ["orbit", "plan", "walk"] },
+        "position": { "$ref": "#/$defs/vec3" },
+        "target": { "$ref": "#/$defs/vec3" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "fov": { "type": "number", "description": "vertical field of view, degrees" },
+        "orthoHeight": { "type": "number", "description": "visible height in metres (plan view)" },
+        "aspect": { "type": "number" },
+        "clip": { "type": "object", "properties": { "on": { "type": "boolean" }, "z": { "type": "number", "description": "horizontal section height, IFC z (m)" } } },
+        "xray": { "type": "boolean" }
+      }
+    }
+  },
+  "properties": {
+    "schema": { "const": "sitear.project/1.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "name": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "modifiedAt": { "type": "string", "format": "date-time" },
+    "units": { "const": "m" },
+    "coordinateSystem": { "type": "object" },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "name": { "type": "string" },
+          "format": { "enum": ["ifc", "dxf", "gltf", "glb", "obj"] },
+          "fileId": { "type": "string", "description": "key of the file in the device store (files are not embedded in the JSON)" },
+          "visible": { "type": "boolean" },
+          "unitScale": { "type": ["number", "null"], "description": "DXF only: drawing unit -> metres" },
+          "info": { "type": ["object", "null"], "description": "schema, element count, IfcSite lat/lon, trueNorthBearing, storeys[{name,elevation}]" }
+        }
+      }
+    },
+    "geo": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "type": ["object", "null"],
+          "description": "ONE-point georeference: model point <-> GPS + bearing.",
+          "properties": {
+            "position": { "$ref": "#/$defs/vec3" },
+            "lat": { "type": "number" }, "lon": { "type": "number" }, "alt": { "type": ["number", "null"] },
+            "bearing": { "type": "number", "description": "clockwise degrees from TRUE NORTH to model +Y (project north)" },
+            "method": { "type": "string", "description": "gps | manual | qr | ifc-site (+2pt when refined)" },
+            "accuracy": { "type": ["number", "null"], "description": "metres" }
+          }
+        },
+        "controlPoints": {
+          "type": "array",
+          "description": "QR control points set out by the surveyor",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "position": { "$ref": "#/$defs/vec3" }, "lat": { "type": "number" }, "lon": { "type": "number" } } }
+        }
+      }
+    },
+    "markups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "number", "type", "status", "position"],
+        "properties": {
+          "id": { "type": "string", "description": "= BCF Topic Guid" },
+          "number": { "type": "integer" },
+          "type": { "enum": ["comment", "note", "issue"] },
+          "title": { "type": "string" }, "text": { "type": "string" },
+          "status": { "enum": ["open", "in-progress", "resolved", "closed"] },
+          "priority": { "enum": ["low", "normal", "high"] },
+          "assignedTo": { "type": "string" }, "author": { "type": "string" },
+          "createdAt": { "type": "string" }, "modifiedAt": { "type": "string" },
+          "position": { "$ref": "#/$defs/vec3" },
+          "element": { "type": ["object", "null"], "properties": { "guid": { "type": "string", "description": "IFC GlobalId (Revit: IfcGUID parameter)" }, "name": { "type": "string" }, "ifcType": { "type": "string" } } },
+          "gps": { "type": ["object", "null"], "properties": { "lat": { "type": "number" }, "lon": { "type": "number" }, "acc": { "type": ["number", "null"] } } },
+          "source": { "enum": ["3d", "plan", "walk", "ar-xr", "ar-camera", "bcf"] },
+          "viewpoint": { "$ref": "#/$defs/viewState" },
+          "snapshot": { "type": ["string", "null"], "description": "data URL (jpeg/png)" },
+          "photos": { "type": "array", "items": { "type": "string", "description": "data URL" } },
+          "replies": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "author": { "type": "string" }, "date": { "type": "string" }, "text": { "type": "string" } } } },
+          "locked": { "type": "boolean" }
+        }
+      }
+    },
+    "views": { "type": "array", "items": { "allOf": [{ "$ref": "#/$defs/viewState" }, { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "locked": { "type": "boolean" }, "thumb": { "type": "string" } } }] } },
+    "tracks": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "startedAt": { "type": "string" }, "endedAt": { "type": ["string", "null"] }, "points": { "type": "array", "items": { "type": "object", "properties": { "t": { "type": "number" }, "lat": { "type": "number" }, "lon": { "type": "number" }, "acc": { "type": "number" }, "position": { "$ref": "#/$defs/vec3" } } } } } } },
+    "nextNumber": { "type": "integer" },
+    "app": { "type": "object", "description": "viewer-only state (render origin); safe to ignore" }
+  }
+}
