@@ -103,7 +103,7 @@ export class Viewer extends EventTarget {
     this.floorY = 0;
     this.xray = false; this.opacityFactor = 1;
     this.hooks = new Set();
-    this.walk = { yaw: 0, pitch: 0, keys: new Set(), joy: { x: 0, y: 0 }, speed: 1.4, follow: false, gyro: false, eye: 1.6 };
+    this.walk = { yaw: 0, pitch: 0, keys: new Set(), joy: { x: 0, y: 0 }, look: { x: 0, y: 0 }, vert: 0, speed: 1.4, follow: false, gyro: false, eye: 1.6 };
     this.tween = null;
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line.threshold = 0.08;
@@ -725,6 +725,10 @@ export class Viewer extends EventTarget {
 
   _walkUpdate(dt) {
     const w = this.walk, cam = this.persp, k = w.keys;
+    if ((w.look.x || w.look.y) && !this.navLocked) { // right stick: turn / look up-down (rate control, like a game pad)
+      w.yaw -= w.look.x * 1.9 * dt;
+      w.pitch = THREE.MathUtils.clamp(w.pitch - w.look.y * 1.3 * dt, -1.45, 1.45);
+    }
     if (w.gyro && this.orientSource && this.orientSource.ready) {
       const q = this.orientSource.getQuaternion();
       const qy = new THREE.Quaternion().setFromAxisAngle(UP, THREE.MathUtils.degToRad((this.bearing || 0) + (this.headingTrim || 0)));
@@ -736,7 +740,7 @@ export class Viewer extends EventTarget {
     const right = new THREE.Vector3(Math.cos(w.yaw), 0, -Math.sin(w.yaw));
     const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0) - w.joy.y;
     const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) + w.joy.x;
-    const u = (k.has('KeyE') || k.has('PageUp') ? 1 : 0) - (k.has('KeyQ') || k.has('PageDown') ? 1 : 0);
+    const u = (k.has('KeyE') || k.has('PageUp') ? 1 : 0) - (k.has('KeyQ') || k.has('PageDown') ? 1 : 0) + w.vert; // ▲▼ buttons add to Q/E
     const sp = w.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 3 : 1) * dt;
     cam.position.addScaledVector(fwd, f * sp).addScaledVector(right, r * sp).addScaledVector(UP, u * sp);
     if (w.follow && this.you.visible && this.youWorld) {

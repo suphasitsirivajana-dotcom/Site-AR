@@ -92,7 +92,7 @@ export async function exportBCF(project, author = 'SiteAR') {
       `<Title>${X(m.title || `${type} #${m.number}`)}</Title>` +
       `<Priority>${X(PRIORITIES[m.priority] || 'Normal')}</Priority>` +
       `<Index>${m.number}</Index>` +
-      `<Labels><Label>SiteAR</Label><Label>${X(m.source)}</Label></Labels>` +
+      `<Labels><Label>SiteAR</Label><Label>${X(m.source)}</Label>${(project.groups || []).filter((g) => g.id === m.group).map((g) => `<Label>${X(g.name)}</Label>`).join('')}</Labels>` +
       `<CreationDate>${m.createdAt}</CreationDate><CreationAuthor>${X(m.author || author)}</CreationAuthor>` +
       `<ModifiedDate>${m.modifiedAt}</ModifiedDate><ModifiedAuthor>${X(m.author || author)}</ModifiedAuthor>` +
       (m.assignedTo ? `<AssignedTo>${X(m.assignedTo)}</AssignedTo>` : '') +

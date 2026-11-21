@@ -3,6 +3,12 @@
 An app for viewing BIM models on site, marking comments, notes and issues in 3D / Plan / Walk / AR, and sending them back to Revit via BCF.
 It installs on iPad, phones and PCs (PWA) and works offline after the first visit.
 
+## Current mode: manual, game-style (location features shelved)
+GPS, step tracking, QR control points, tripod, Walk&Mark and the AR overlay are **switched off** (hidden, code kept): set `LOCATION_FEATURES = true` in `js/main.js` to bring them all back. Everything is controlled by hand:
+- **Walk** (bottom bar): left stick = move, right stick = look, **▲ ▼** = fly up / down, speed button (เดิน / วิ่ง / เร็ว / บิน). On PC: W A S D + mouse drag, Q / E = down / up.
+- **แคป (Capture, key C)**: saves a screenshot of the current view straight into the active group. **มาร์ค (Mark, key M)**: puts a pin where the crosshair points, then add a comment / photo.
+- **Groups** (chip under the buttons): captures and marks that belong together; each group is drawn as a line through its items in order, filtered in the list, and exported to BCF (as a label), CSV and Project JSON.
+
 ## Features
 | | |
 |---|---|

@@ -9,6 +9,7 @@ export const uuid = () =>
     }));
 
 export const MARKUP_TYPES = {
+  capture: { label: 'Capture', th: 'ภาพ', color: '#b48cff', icon: 'photo' },
   comment: { label: 'Comment', th: 'คอมเมนต์', color: '#38e1ff', icon: 'comment' },
   note: { label: 'Note', th: 'โน้ต', color: '#ffc145', icon: 'note' },
   issue: { label: 'Issue', th: 'ปัญหา', color: '#ff5c7a', icon: 'issue' }
@@ -40,6 +41,7 @@ export function newProject(name = 'Untitled project') {
     models: [],
     geo: { anchor: null, controlPoints: [] },
     markups: [],
+    groups: [],
     views: [],
     tracks: [],
     nextNumber: 1,
@@ -58,6 +60,7 @@ export function newMarkup(p, fields) {
     status: 'open',
     priority: 'normal',
     assignedTo: '',
+    group: null,
     author: '',
     createdAt: now,
     modifiedAt: now,

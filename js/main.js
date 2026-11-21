@@ -53,7 +53,13 @@ const ar = new ARController({
 ar.addEventListener('end', () => { syncModeUI(); });
 
 // ================================================================ ribbon
-const RIBBON = [
+// Location features (GPS, step tracking, QR control points, tripod, Walk&Mark, AR overlay) are SHELVED for now.
+// All the code is still here — set this to true to bring every button back.
+const LOCATION_FEATURES = false;
+const LOCATION_CMDS = new Set(['walk-mark', 'self-mark', 'face-point', 'set-location', 'gps', 'follow', 'qr-create', 'qr-scan', 'track', 'track-clear',
+  'heading-2pt', 'compass', 'ar-xr', 'ar-cam', 'walk-track', 'track-mode', 'steps', 'gyro']);
+
+const RIBBON_FULL = [
   { id: 'home', label: 'Home', groups: [
     { label: 'Project', items: [
       { cmd: 'new', icon: 'newfile', label: 'New', tip: 'โปรเจกต์ใหม่' },
@@ -70,15 +76,18 @@ const RIBBON = [
       { cmd: 'fit', icon: 'fit', label: 'Fit', tip: 'ซูมให้เห็นทั้งโมเดล' }] },
     { label: 'Markup', items: [
       { cmd: 'select', icon: 'select', label: 'Select' },
-      { cmd: 'mk-comment', icon: 'comment', label: 'Comment' },
-      { cmd: 'mk-note', icon: 'note', label: 'Note' },
+      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'แคปภาพมุมมองนี้เก็บเข้ากลุ่ม (C)' },
+      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'มาร์คตรงเป้ากลางจอ (M)' },
+      { cmd: 'groups', icon: 'layers', label: 'Group', tip: 'จัดกลุ่มภาพ/มาร์คต่อกัน' },
       { cmd: 'save-view', icon: 'bookmark', label: 'Save View' }] }] },
   { id: 'markup', label: 'Markup', groups: [
     { label: 'Create', items: [
+      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'แคปภาพมุมมองนี้เก็บเข้ากลุ่ม (C)' },
+      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'มาร์คตรงเป้ากลางจอ (M)' },
+      { cmd: 'groups', icon: 'layers', label: 'Group' },
       { cmd: 'mk-comment', icon: 'comment', label: 'Comment' },
       { cmd: 'mk-note', icon: 'note', label: 'Note' },
-      { cmd: 'mk-issue', icon: 'issue', label: 'Issue' },
-      { cmd: 'mk-photo', icon: 'photo', label: 'Photo', tip: 'มาร์คพร้อมถ่ายรูป' }] },
+      { cmd: 'mk-issue', icon: 'issue', label: 'Issue' }] },
     { label: 'Edit', items: [
       { cmd: 'mk-edit', icon: 'edit', label: 'Edit' },
       { cmd: 'mk-lock', icon: 'lock', label: 'Lock', tip: 'ล็อคมาร์คที่เลือก (กันแก้ไข/ลบ)' },
@@ -138,8 +147,12 @@ const RIBBON = [
       { cmd: 'json-export', icon: 'json', label: 'Project JSON', tip: 'ไฟล์โปรเจกต์ (ใช้กับ Unity / Revit script)' },
       { cmd: 'json-import', icon: 'import', label: 'Import JSON' },
       { cmd: 'csv-export', icon: 'table', label: 'CSV' }] },
-    { label: 'Help', items: [{ cmd: 'revit-guide', icon: 'info', label: 'Revit Guide' }] }] }
+    { label: 'Help', items: [{ cmd: 'settings', icon: 'sliders', label: 'Settings' }, { cmd: 'revit-guide', icon: 'info', label: 'Revit Guide' }] }] }
 ];
+// shelved features: drop the Site / AR tabs and every location button (the code stays, nothing is deleted)
+const RIBBON = LOCATION_FEATURES ? RIBBON_FULL : RIBBON_FULL
+  .filter((t) => t.id !== 'site' && t.id !== 'ar')
+  .map((t) => ({ ...t, groups: t.groups.map((g) => ({ ...g, items: g.items.filter((i) => !LOCATION_CMDS.has(i.cmd)) })).filter((g) => g.items.length) }));
 const ribbon = new Ribbon($('#ribbon-tabs'), $('#ribbon'), RIBBON, onCommand);
 // mouse wheel scrolls the ribbon sideways when it is wider than the window
 for (const el of [$('#ribbon'), $('#ribbon-tabs')]) {
@@ -178,6 +191,9 @@ async function onCommand(cmd) {
     case 'panel-views': return openPanel('views');
     case 'models': return openPanel('info');
     case 'save-view': return saveView();
+    case 'capture': return captureView();
+    case 'mark-center': return markCenter();
+    case 'groups': return groupDialog();
     case 'xray': viewer.setXray(!viewer.xray); return syncToggles();
     case 'section': return setSection(!viewer.clipOn);
     case 'grid': settings.grid = !settings.grid; saveSettings(); viewer.setGrid(settings.grid); return syncToggles();
@@ -250,9 +266,14 @@ function setMode(m) {
 }
 function syncModeUI() {
   $$('#modebar [data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === viewer.mode || (b.dataset.mode === 'ar' && (viewer.mode === 'xr' || viewer.mode === 'cam-ar'))));
-  $('#joystick').hidden = !(viewer.mode === 'walk' && isTouch && !app.loc.stepMode);
-  $('#step-btn').hidden = app.wm ? app.wm.state !== 'walk' : !(viewer.mode === 'walk' && app.loc.stepMode);
-  $('#crosshair').hidden = viewer.mode !== 'cam-ar';
+  const walking = viewer.mode === 'walk';
+  // game-style controls in Walk: left stick = move, right stick = look (touch), ▲▼ = fly up / down, speed
+  $('#joystick').hidden = !(walking && isTouch);
+  $('#joystick-look').hidden = !(walking && isTouch);
+  $('#fly').hidden = !walking;
+  $('#step-btn').hidden = !LOCATION_FEATURES || (app.wm ? app.wm.state !== 'walk' : !(walking && app.loc.stepMode));
+  $('#crosshair').hidden = !(viewer.mode === 'cam-ar' || walking); // aim point for Mark / Capture
+  $('#quick').hidden = viewer.mode === 'xr' || viewer.mode === 'cam-ar';
   document.body.dataset.mode = viewer.mode;
   syncToggles();
 }
@@ -296,7 +317,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') viewer.fitAll();
   if (e.key === 'h' || e.key === 'H') goHome();
   if (e.key === '1') setMode('orbit'); if (e.key === '2') setMode('plan'); if (e.key === '3') setMode('walk');
-  if (e.key === 'c' || e.key === 'C') startPlace('comment');
+  if (e.key === 'c' || e.key === 'C') captureView();
+  if (e.key === 'm' || e.key === 'M') markCenter();
   if (e.key === 'n' || e.key === 'N') startPlace('note');
   if (e.key === 'Delete' && app.sel) withSel(deleteMarkup);
 });
@@ -366,10 +388,10 @@ async function openProject(p) {
   app.project = p; app.sel = null; app.elSel = null; app.loc.corr = { x: 0, y: 0 }; app.loc.fix = null;
   // migrate older/foreign files
   p.geo = p.geo || { anchor: null, controlPoints: [] }; p.geo.controlPoints = p.geo.controlPoints || [];
-  p.markups = p.markups || []; p.views = p.views || []; p.tracks = p.tracks || []; p.app = p.app || { viewOrigin: null };
+  p.markups = p.markups || []; p.groups = p.groups || []; p.views = p.views || []; p.tracks = p.tracks || []; p.app = p.app || { viewOrigin: null };
   p.nextNumber = p.nextNumber || (Math.max(0, ...p.markups.map((m) => m.number || 0)) + 1);
   // restore the last "I'm Here" / QR position
-  if (p.geo.here && p.geo.here.position) { app.loc.fix = { id: p.geo.here.id, position: { ...p.geo.here.position }, t: p.geo.here.t }; app.loc.fixZ = p.geo.here.position.z; }
+  if (LOCATION_FEATURES && p.geo.here && p.geo.here.position) { app.loc.fix = { id: p.geo.here.id, position: { ...p.geo.here.position }, t: p.geo.here.t }; app.loc.fixZ = p.geo.here.position.z; }
   try { localStorage.setItem(LAST_KEY, p.id); } catch (e) { /* ignore */ }
   $('#project-name').textContent = p.name;
   for (const rec of p.models) {
@@ -500,7 +522,7 @@ async function createMarkupAt(hit, ifc, { type, photo, source }) {
   const author = await ensureAuthor();
   const element = hit.type === 'model' ? await elementInfoFor(hit.modelId, hit.eid) : null;
   const m = newMarkup({ nextNumber: app.project.nextNumber }, {
-    type, author, position: ifc, element, gps: gpsOfPoint(ifc),
+    type, author, position: ifc, element, gps: gpsOfPoint(ifc), group: ensureGroup().id,
     source: source || (viewer.mode === 'plan' ? 'plan' : viewer.mode === 'walk' ? 'walk' : '3d'),
     viewpoint: viewer.getViewState(), snapshot: viewer.snapshot(720)
   });
@@ -533,6 +555,7 @@ function openMarkupEditor(m, isNew, openCamera = false) {
       <label class="field"><span>Priority</span><select id="me-prio">${opts(PRIORITIES, draft.priority)}</select></label>
       <label class="field"><span>Assigned to</span><input id="me-assign" value="${esc(draft.assignedTo)}" placeholder="—"></label>
     </div>
+    <label class="field"><span>กลุ่ม · Group</span><select id="me-group"><option value="">— ไม่มีกลุ่ม</option>${((app.project.groups) || []).map((g) => `<option value="${g.id}" ${g.id === draft.group ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
     <div class="field"><span>รูปถ่าย · Photos</span><div class="photos" id="me-photos"></div></div>
     <div class="meta-grid">
       <div><span>Position · IFC (m)</span><b class="mono">X ${fmtM(draft.position.x)} · Y ${fmtM(draft.position.y)} · Z ${fmtM(draft.position.z)}</b></div>
@@ -587,6 +610,7 @@ function openMarkupEditor(m, isNew, openCamera = false) {
       draft.status = body.querySelector('#me-status').value;
       draft.priority = body.querySelector('#me-prio').value;
       draft.assignedTo = body.querySelector('#me-assign').value.trim();
+      draft.group = body.querySelector('#me-group').value || null;
     }
     draft.locked = body.querySelector('#me-lock').checked;
     draft.modifiedAt = new Date().toISOString();
@@ -663,12 +687,88 @@ function refreshMarkers() {
   const list = P.markups.filter(filterFn()).map((m) => ({ id: m.id, number: m.number, position: m.position, color: statusColor(m) }));
   viewer.setMarkers(list, app.sel, settings.showMarkups);
   $('#mk-count').textContent = P.markups.length;
-  renderBadges();
+  renderBadges(); renderTrack(); updateGroupChip();
 }
 function filterFn() {
-  const f = app.mkFilter;
-  return (m) => f === 'all' || (f === 'open' ? m.status === 'open' || m.status === 'in-progress' : f === 'done' ? m.status === 'resolved' || m.status === 'closed' : m.type === f);
+  const f = app.mkFilter, gsel = app.mkGroup || 'all';
+  return (m) => (gsel === 'all' || m.group === gsel) &&
+    (f === 'all' || (f === 'open' ? m.status === 'open' || m.status === 'in-progress' : f === 'done' ? m.status === 'resolved' || m.status === 'closed' : m.type === f));
 }
+
+// ================================================================ Groups: captures / marks that belong together, in order
+function activeGroup() { const P = app.project; return (P.groups || []).find((g) => g.id === P.app.activeGroup) || null; }
+function ensureGroup() {
+  const P = app.project; P.groups = P.groups || [];
+  let g = activeGroup();
+  if (!g) { g = { id: uuid(), name: `กลุ่ม ${P.groups.length + 1}`, createdAt: new Date().toISOString() }; P.groups.push(g); P.app.activeGroup = g.id; save(); }
+  updateGroupChip();
+  return g;
+}
+function groupName(id) { const g = ((app.project && app.project.groups) || []).find((x) => x.id === id); return g ? g.name : ''; }
+function updateGroupChip() { const g = app.project && activeGroup(); const el = $('#q-group-name'); if (el) el.textContent = g ? g.name : 'ยังไม่มีกลุ่ม'; }
+function groupDialog() {
+  const P = app.project; P.groups = P.groups || [];
+  const body = h('<div class="proj-list"></div>');
+  const render = () => {
+    body.innerHTML = P.groups.map((g) => {
+      const n = P.markups.filter((m) => m.group === g.id).length, on = g.id === P.app.activeGroup;
+      return `<div class="proj-item ${on ? 'current' : ''}" data-id="${g.id}"><div class="proj-icon">${icon('layers')}</div>
+        <div class="proj-main"><b>${esc(g.name)}</b><span>${n} รายการ${on ? ' · กลุ่มที่ใช้อยู่ (ภาพ/มาร์คใหม่จะเข้ากลุ่มนี้)' : ' · แตะเพื่อใช้กลุ่มนี้'}</span></div>
+        <button class="icon-btn" data-a="ren" title="เปลี่ยนชื่อ">${icon('edit')}</button><button class="icon-btn" data-a="del" title="ลบกลุ่ม">${icon('trash')}</button></div>`;
+    }).join('') || '<p class="muted">ยังไม่มีกลุ่ม — กด "กลุ่มใหม่"</p>';
+  };
+  const refresh = () => { save(); updateGroupChip(); render(); refreshMarkers(); renderPanel(); };
+  render();
+  modal({ title: 'กลุ่มภาพ / มาร์ค', body, actions: [
+    { label: 'ปิด', onClick: (c) => c() },
+    { label: 'กลุ่มใหม่', icon: 'plus', kind: 'primary', onClick: async () => {
+      const n = await promptBox('กลุ่มใหม่', 'ชื่อกลุ่ม', `กลุ่ม ${P.groups.length + 1}`); if (!n) return;
+      const g = { id: uuid(), name: n, createdAt: new Date().toISOString() }; P.groups.push(g); P.app.activeGroup = g.id; refresh();
+    } }] });
+  body.onclick = async (e) => {
+    const it = e.target.closest('.proj-item'); if (!it) return;
+    const g = P.groups.find((x) => x.id === it.dataset.id), a = e.target.closest('[data-a]')?.dataset.a;
+    if (a === 'ren') { const n = await promptBox('เปลี่ยนชื่อกลุ่ม', 'ชื่อ', g.name); if (n) { g.name = n; refresh(); } return; }
+    if (a === 'del') {
+      if (await confirmBox('ลบกลุ่ม', `ลบกลุ่ม "${g.name}"? ภาพและมาร์คในกลุ่มยังอยู่ แค่ไม่มีกลุ่ม`, 'ลบ', true)) {
+        P.markups.forEach((m) => { if (m.group === g.id) m.group = null; });
+        P.groups = P.groups.filter((x) => x !== g); if (P.app.activeGroup === g.id) P.app.activeGroup = null; refresh();
+      }
+      return;
+    }
+    P.app.activeGroup = g.id; refresh();
+  };
+}
+
+// ---------------- aim point = what is under the crosshair (centre of the screen)
+function aimPoint() {
+  viewer.raycaster.setFromCamera(new THREE.Vector2(0, 0), viewer.camera);
+  viewer.raycaster.camera = viewer.camera;
+  const hit = viewer.pickRay(viewer.raycaster, { markers: false });
+  if (hit && hit.point) return { point: hit.point.clone(), hit };
+  return { point: viewer.raycaster.ray.at(5, new THREE.Vector3()), hit: null };
+}
+// Capture: save a screenshot of the current 3D view into the active group straight away (no dialog) — like a game screenshot
+async function captureView() {
+  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  const author = await ensureAuthor(), g = ensureGroup(), a = aimPoint();
+  const m = newMarkup(app.project, {
+    type: 'capture', author, position: viewer.worldToIfc(a.point), group: g.id, source: 'capture',
+    viewpoint: viewer.getViewState(), snapshot: viewer.snapshot(1280, 'image/jpeg', 0.85)
+  });
+  app.project.markups.push(m); app.sel = m.id;
+  const s = h('<div class="shutter"></div>'); $('#viewport').appendChild(s); setTimeout(() => s.remove(), 400);
+  save(); refreshMarkers(); renderPanel();
+  toast(`แคปภาพ #${m.number} · ${g.name}`, 'ok', 1800);
+}
+async function markCenter() {
+  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  const a = aimPoint();
+  await createMarkupAt(a.hit || { type: 'plane' }, viewer.worldToIfc(a.point), { type: 'comment' });
+}
+$('#q-capture').onclick = captureView;
+$('#q-mark').onclick = markCenter;
+$('#q-group').onclick = groupDialog;
 
 // ================================================================ views
 async function saveView() {
@@ -701,7 +801,9 @@ function markupsHTML() {
   const P = app.project;
   const sel = P.markups.find((m) => m.id === app.sel);
   const items = P.markups.filter(filterFn()).sort((a, b) => b.number - a.number);
-  const filters = [['all', 'All'], ['open', 'Open'], ['done', 'Done'], ['comment', 'Comments'], ['note', 'Notes'], ['issue', 'Issues']];
+  const filters = [['all', 'All'], ['open', 'Open'], ['done', 'Done'], ['capture', 'ภาพ'], ['comment', 'Comments'], ['note', 'Notes'], ['issue', 'Issues']];
+  const gsel = app.mkGroup || 'all';
+  const groupPills = (P.groups && P.groups.length) ? `<div class="filters"><button class="pill ${gsel === 'all' ? 'on' : ''}" data-group="all">ทุกกลุ่ม</button>${P.groups.map((g) => `<button class="pill ${gsel === g.id ? 'on' : ''}" data-group="${g.id}">${esc(g.name)}</button>`).join('')}</div>` : '';
   const detail = sel ? `
     <div class="mk-detail">
       ${sel.photos[0] || sel.snapshot ? `<div class="mk-hero"><img src="${sel.photos[0] || sel.snapshot}" alt="">${sel.photos.length > 1 ? `<span class="badge">+${sel.photos.length - 1}</span>` : ''}</div>` : ''}
@@ -718,6 +820,7 @@ function markupsHTML() {
       </div>
     </div>` : '';
   return `${detail}
+    ${groupPills}
     <div class="filters">${filters.map(([k, l]) => `<button class="pill ${app.mkFilter === k ? 'on' : ''}" data-filter="${k}">${l}</button>`).join('')}</div>
     <div class="mk-list">${items.map((m) => `
       <button class="mk-item ${m.id === app.sel ? 'on' : ''}" data-id="${m.id}">
@@ -758,7 +861,7 @@ function infoHTML() {
         <button class="icon-btn sm" data-m="del" title="Remove">${icon('trash')}</button>
       </div>`).join('') || '<p class="muted small">ยังไม่มีโมเดล</p>'}
       <button class="btn sm" data-m="add">${icon('plus')}<span>Add model</span></button></section>
-    <section><h4>Site location</h4>
+    ${LOCATION_FEATURES ? `<section><h4>Site location</h4>
       ${a ? `<div class="kv"><span>Anchor (IFC)</span><b class="mono">${fmtM(a.position.x, 2)}, ${fmtM(a.position.y, 2)}, ${fmtM(a.position.z, 2)}</b></div>
         <div class="kv"><span>GPS</span><b class="mono">${fmtLL(a.lat)}, ${fmtLL(a.lon)}</b></div>
         <div class="kv"><span>Project north</span><b class="mono">${a.bearing.toFixed(2)}° from true north</b></div>
@@ -772,7 +875,7 @@ function infoHTML() {
         <button class="icon-btn sm" data-c="show" title="QR">${icon('print')}</button>
         <button class="icon-btn sm" data-c="del" title="Delete">${icon('trash')}</button></div>`).join('') || '<p class="muted small">ยังไม่มีจุด QR</p>'}
       <button class="btn sm" data-g="cp">${icon('qr')}<span>Create QR point</span></button>
-    </section>
+    </section>` : ''}
     <section><h4>Project</h4>
       <div class="kv"><span>Name</span><b>${esc(P.name)}</b></div>
       <div class="kv"><span>Markups / views</span><b>${P.markups.length} / ${P.views.length}</b></div>
@@ -782,6 +885,7 @@ function infoHTML() {
 $('#panel-body').onclick = async (e) => {
   const t = e.target;
   const f = t.closest('[data-filter]'); if (f) { app.mkFilter = f.dataset.filter; refreshMarkers(); return renderPanel(); }
+  const gp = t.closest('[data-group]'); if (gp) { app.mkGroup = gp.dataset.group; refreshMarkers(); return renderPanel(); }
   const it = t.closest('.mk-item'); if (it) return selectMarkup(it.dataset.id, true);
   const mk = t.closest('[data-mk]');
   if (mk) {
@@ -971,6 +1075,12 @@ function recordTrack() {
 }
 function renderTrack() {
   const P = app.project;
+  if (!LOCATION_FEATURES) { // GPS path shelved: draw the ACTIVE GROUP as a line through its captures / marks, in order ("ต่อกัน")
+    const g = activeGroup();
+    const pts = g ? P.markups.filter((m) => m.group === g.id).sort((a, b) => a.number - b.number).map((m) => ifcToRaw(m.position)) : [];
+    viewer.setTrack(pts, settings.showMarkups);
+    return;
+  }
   const tr = [...P.tracks].reverse().find((t) => t.points.length > 1);
   viewer.setTrack(tr ? tr.points.map((p) => ifcToRaw(p.position)) : [], settings.showTrack);
 }
@@ -1563,8 +1673,8 @@ async function cmdExportBCF() {
   busy(false);
 }
 function cmdExportCSV() {
-  const rows = [['Number', 'Type', 'Status', 'Priority', 'Title', 'Description', 'Author', 'Created', 'Modified', 'X', 'Y', 'Z', 'Latitude', 'Longitude', 'IFC GUID', 'Element', 'IFC Type', 'Source', 'Locked', 'Photos', 'Replies']];
-  for (const m of app.project.markups) rows.push([m.number, m.type, m.status, m.priority, markupTitle(m), m.text, m.author, m.createdAt, m.modifiedAt,
+  const rows = [['Number', 'Group', 'Type', 'Status', 'Priority', 'Title', 'Description', 'Author', 'Created', 'Modified', 'X', 'Y', 'Z', 'Latitude', 'Longitude', 'IFC GUID', 'Element', 'IFC Type', 'Source', 'Locked', 'Photos', 'Replies']];
+  for (const m of app.project.markups) rows.push([m.number, groupName(m.group), m.type, m.status, m.priority, markupTitle(m), m.text, m.author, m.createdAt, m.modifiedAt,
     m.position.x.toFixed(4), m.position.y.toFixed(4), m.position.z.toFixed(4), m.gps ? m.gps.lat.toFixed(8) : '', m.gps ? m.gps.lon.toFixed(8) : '',
     m.element ? m.element.guid : '', m.element ? m.element.name : '', m.element ? m.element.ifcType : '', m.source, m.locked ? 'yes' : '', m.photos.length, m.replies.length]);
   const csv = '﻿' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -1686,21 +1796,33 @@ $('#modebar').onclick = (e) => {
   setMode(m);
 };
 
-// joystick (touch walk)
-(() => {
-  const j = $('#joystick'), knob = j.querySelector('.knob');
+// ---- game-style Walk controls: left stick = move, right stick = look, ▲▼ = fly up / down, speed button
+function makeStick(el, onChange) {
+  const knob = el.querySelector('.knob'), R = 42;
   let id = null, cx = 0, cy = 0;
-  j.addEventListener('pointerdown', (e) => { id = e.pointerId; j.setPointerCapture(id); const r = j.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e); });
   const move = (e) => {
     if (e.pointerId !== id) return;
-    let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy), R = 42;
+    let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy);
     if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
-    knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    viewer.walk.joy.x = dx / R; viewer.walk.joy.y = dy / R;
+    knob.style.transform = `translate(${dx}px, ${dy}px)`; onChange(dx / R, dy / R);
   };
-  const end = (e) => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; viewer.walk.joy.x = viewer.walk.joy.y = 0; };
-  j.addEventListener('pointermove', move); j.addEventListener('pointerup', end); j.addEventListener('pointercancel', end);
-})();
+  const end = (e) => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; onChange(0, 0); };
+  el.addEventListener('pointerdown', (e) => { id = e.pointerId; try { el.setPointerCapture(id); } catch (err) { /* synthetic pointer */ } const r = el.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e); });
+  el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
+makeStick($('#joystick'), (x, y) => { viewer.walk.joy.x = x; viewer.walk.joy.y = y; });
+makeStick($('#joystick-look'), (x, y) => { viewer.walk.look.x = x; viewer.walk.look.y = y; });
+for (const [id, dir] of [['#fly-up', 1], ['#fly-down', -1]]) {
+  const b = $(id);
+  b.addEventListener('pointerdown', (e) => { e.preventDefault(); viewer.walk.vert = dir; try { b.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ } });
+  for (const ev of ['pointerup', 'pointercancel']) b.addEventListener(ev, () => { viewer.walk.vert = 0; });
+}
+const SPEEDS = [[1.4, 'เดิน'], [3, 'วิ่ง'], [6, 'เร็ว'], [12, 'บิน']];
+let speedIdx = 0;
+$('#speed-btn').onclick = () => { speedIdx = (speedIdx + 1) % SPEEDS.length; viewer.walk.speed = SPEEDS[speedIdx][0]; $('#speed-btn').textContent = SPEEDS[speedIdx][1]; toast(`ความเร็ว: ${SPEEDS[speedIdx][1]} (${SPEEDS[speedIdx][0]} m/s)`, 'info', 1200); };
+
+// shelved UI
+if (!LOCATION_FEATURES) { $('#st-anchor').hidden = true; $('#st-gps').hidden = true; const ar = $('#modebar [data-mode=ar]'); if (ar) ar.hidden = true; }
 
 // ================================================================ file inputs, drag & drop, sample
 $('#file-model').onchange = (e) => { const f = [...e.target.files]; e.target.value = ''; onModelFiles(f); };
