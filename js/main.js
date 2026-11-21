@@ -15,11 +15,12 @@ import { poseFromDetection, poseToModel } from './pose.js';
 
 // ================================================================ settings
 const SETTINGS_KEY = 'sitear.settings', LAST_KEY = 'sitear.lastProject';
-const settings = { author: '', eye: 1.6, camFov: 45, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, stepSens: 0.8, trackMode: 'hybrid', qrSize: 0.2, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
+const settings = { author: '', eye: 1.6, camFov: 45, arOpacity: 0.75, gpsAvg: 8, stepLen: 0.7, stepSens: 0.8, trackMode: 'hybrid', qrSize: 0.2, camOpacity: 0.6, showTrack: true, showMarkups: true, grid: true, scope: true, scopeFactor: 3 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { /* private mode */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
 // ================================================================ state
+const cam = { on: false, stream: null, prevFov: 55 }; // CAM overlay state (Walk mode)
 const app = {
   project: null,
   tool: 'select', toolData: null,
@@ -55,7 +56,7 @@ ar.addEventListener('end', () => { syncModeUI(); });
 // ================================================================ ribbon
 // Shown in the status bar so you can see at a glance whether a phone/iPad has picked up the latest upload.
 // Bump this together with VERSION in sw.js every time files are uploaded.
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 // Location features (GPS, step tracking, QR control points, tripod, Walk&Mark, AR overlay) are SHELVED for now.
 // All the code is still here — set this to true to bring every button back.
@@ -279,6 +280,10 @@ function syncModeUI() {
   $('#gyro-btn').hidden = !(walking && isTouch);
   $('#gyro-btn').classList.toggle('on', !!viewer.walk.gyro);
   $('#gyro-state').textContent = viewer.walk.gyro ? 'ON' : 'OFF';
+  $('#cam-btn').hidden = !walking;
+  $('#cam-btn').classList.toggle('on', cam.on);
+  $('#cam-state').textContent = cam.on ? 'ON' : 'OFF';
+  $('#cam-panel').hidden = !(walking && cam.on);
   $('#step-btn').hidden = !LOCATION_FEATURES || (app.wm ? app.wm.state !== 'walk' : !(walking && app.loc.stepMode));
   $('#crosshair').hidden = !(viewer.mode === 'cam-ar' || walking); // aim point for Mark / Capture
   $('#quick').hidden = viewer.mode === 'xr' || viewer.mode === 'cam-ar';
@@ -760,15 +765,79 @@ function aimPoint() {
 async function captureView() {
   if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const author = await ensureAuthor(), g = ensureGroup(), a = aimPoint();
+  const shots = cam.on ? camFrames() : null; // CAM on: overlay (site + model) as the main image, plain site photo attached
   const m = newMarkup(app.project, {
-    type: 'capture', author, position: viewer.worldToIfc(a.point), group: g.id, source: 'capture',
-    viewpoint: viewer.getViewState(), snapshot: viewer.snapshot(1280, 'image/jpeg', 0.85)
+    type: 'capture', author, position: viewer.worldToIfc(a.point), group: g.id, source: shots ? 'capture-cam' : 'capture',
+    text: shots ? 'Site vs model (overlay + site photo)' : '',
+    viewpoint: viewer.getViewState(), snapshot: shots ? shots.overlay : viewer.snapshot(1280, 'image/jpeg', 0.85),
+    photos: shots ? [shots.real] : []
   });
   app.project.markups.push(m); app.sel = m.id;
   const s = h('<div class="shutter"></div>'); $('#viewport').appendChild(s); setTimeout(() => s.remove(), 400);
   save(); refreshMarkers(); renderPanel();
-  toast(`Captured #${m.number} · ${g.name}`, 'ok', 1800);
+  toast(shots ? `Captured #${m.number} · overlay + site photo · ${g.name}` : `Captured #${m.number} · ${g.name}`, 'ok', 2000);
 }
+
+// ================================================================ CAM: live camera behind the model (Walk)
+// No positioning system: you walk to where you stand with the sticks, turn the view with GYRO or the look stick,
+// and line the model up with reality yourself. Model opacity + lens (FOV) sliders help the match.
+async function toggleCam() {
+  if (cam.on) return camOff(true);
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
+  if (viewer.mode !== 'walk') setMode('walk');
+  try {
+    cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+  } catch (e) { return toast(`Camera: ${e.name === 'NotAllowedError' ? 'permission denied' : e.message}`, 'error', 4000); }
+  const v = $('#camfeed'); v.srcObject = cam.stream; v.hidden = false;
+  try { await v.play(); } catch (e) { /* autoplay is allowed for muted inline video */ }
+  cam.on = true; cam.prevFov = viewer.persp.fov;
+  viewer.persp.fov = settings.camFov; viewer.persp.updateProjectionMatrix();
+  viewer.setOpacityFactor(settings.camOpacity);
+  viewer.grid.visible = false;
+  document.body.classList.add('cam-on');
+  $('#cam-op').value = settings.camOpacity; $('#cam-op-v').textContent = `${Math.round(settings.camOpacity * 100)}%`;
+  $('#cam-fov').value = settings.camFov; $('#cam-fov-v').textContent = `${Math.round(settings.camFov)}°`;
+  syncModeUI();
+  toast(viewer.walk.gyro
+    ? 'CAM on — move to where you stand and line the model up · Capture saves overlay + site photo'
+    : 'CAM on — turn GYRO on so the view follows the device, then line the model up with the sticks', 'ok', 5000);
+}
+function camOff(notify) {
+  if (!cam.on) return;
+  cam.on = false;
+  if (cam.stream) cam.stream.getTracks().forEach((t) => t.stop());
+  cam.stream = null;
+  const v = $('#camfeed'); v.srcObject = null; v.hidden = true;
+  viewer.persp.fov = cam.prevFov || 55; viewer.persp.updateProjectionMatrix();
+  viewer.setOpacityFactor(1); viewer.setGrid(settings.grid);
+  document.body.classList.remove('cam-on');
+  syncModeUI();
+  if (notify) toast('CAM off', 'info', 1200);
+}
+// two JPEGs framed exactly like the screen (video is object-fit: cover): site photo, and site photo + model
+function camFrames() {
+  const v = $('#camfeed'), cv = viewer.canvas;
+  viewer.renderer.render(viewer.scene, viewer.camera);
+  const k = Math.min(1, 1600 / Math.max(cv.width, cv.height)), w = Math.round(cv.width * k), hh = Math.round(cv.height * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = hh;
+  const g = c.getContext('2d');
+  if (v.videoWidth) {
+    const s = Math.max(w / v.videoWidth, hh / v.videoHeight), dw = v.videoWidth * s, dh = v.videoHeight * s;
+    g.drawImage(v, (w - dw) / 2, (hh - dh) / 2, dw, dh);
+  } else { g.fillStyle = '#000'; g.fillRect(0, 0, w, hh); }
+  const real = c.toDataURL('image/jpeg', 0.85);
+  g.drawImage(cv, 0, 0, w, hh);
+  return { real, overlay: c.toDataURL('image/jpeg', 0.85) };
+}
+$('#cam-btn').onclick = () => toggleCam();
+$('#cam-op').oninput = (e) => {
+  settings.camOpacity = +e.target.value; viewer.setOpacityFactor(settings.camOpacity);
+  $('#cam-op-v').textContent = `${Math.round(settings.camOpacity * 100)}%`; saveSettings();
+};
+$('#cam-fov').oninput = (e) => { // match the phone's lens: if the model looks too big / small against reality, change this
+  settings.camFov = +e.target.value; viewer.persp.fov = settings.camFov; viewer.persp.updateProjectionMatrix();
+  $('#cam-fov-v').textContent = `${Math.round(settings.camFov)}°`; saveSettings();
+};
 async function markCenter() {
   if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const a = aimPoint();
@@ -1807,7 +1876,7 @@ viewer.addEventListener('frame', () => {
   if (gps.active || app.loc.fix || orient.listening) computeLoc();
   if (app.wm && app.wm.state === 'walk' && viewer.youWorld) viewer.followPlan(viewer.youWorld, 0.25);
 });
-viewer.addEventListener('mode', (e) => { if (e.detail.mode !== 'walk') gyroOff(); syncModeUI(); });
+viewer.addEventListener('mode', (e) => { if (e.detail.mode !== 'walk') { gyroOff(); camOff(); } syncModeUI(); });
 $('#gyro-btn').onclick = () => toggleGyro();
 document.body.classList.toggle('touch', isTouch);
 viewer.addEventListener('clip', () => syncToggles());

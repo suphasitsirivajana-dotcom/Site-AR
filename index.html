@@ -82,6 +82,13 @@
         <button id="gyro-btn" class="gyro-btn" hidden title="Turn the device to look around (on / off)">
           <span class="gdot"></span><span>GYRO</span><b id="gyro-state">OFF</b>
         </button>
+        <button id="cam-btn" class="gyro-btn cam-btn" hidden title="Live camera behind the model (on / off)">
+          <span class="gdot"></span><span>CAM</span><b id="cam-state">OFF</b>
+        </button>
+        <div id="cam-panel" class="cam-panel" hidden>
+          <label><span>MODEL</span><input type="range" id="cam-op" min="0.1" max="1" step="0.05" value="0.6"><b id="cam-op-v">60%</b></label>
+          <label><span>FOV</span><input type="range" id="cam-fov" min="28" max="75" step="1" value="45"><b id="cam-fov-v">45°</b></label>
+        </div>
         <div id="fly" class="fly" hidden>
           <button id="fly-up" aria-label="Up" title="Up (E)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 14.5 12 9l5.5 5.5"/></svg></button>
           <button id="speed-btn" title="Speed">WALK</button>

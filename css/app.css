@@ -188,6 +188,15 @@ body:not(.touch) .fly { left: 12px; } /* PC: no sticks, so the buttons take the 
 .gyro-btn.on { background: rgba(23, 48, 92, .78); border-color: rgba(96,165,250,.7); color: var(--text); box-shadow: 0 0 16px rgba(59,130,246,.35); }
 .gyro-btn.on .gdot { background: #60a5fa; box-shadow: 0 0 8px #3b82f6; }
 .gyro-btn.on b { color: #93c5fd; }
+/* CAM pill sits above GYRO; its panel (model opacity + lens) sits to the left of the pills */
+.gyro-btn.cam-btn { bottom: 166px; }
+.cam-panel { position: absolute; z-index: 4; right: 140px; bottom: 128px; width: 214px; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 12px;
+  background: rgba(7, 11, 20, .72); border: 1px solid rgba(96,165,250,.28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.cam-panel label { display: grid; grid-template-columns: 44px 1fr 34px; align-items: center; gap: 8px; font: 600 9px var(--mono); letter-spacing: .16em; color: rgba(147,197,253,.8); }
+.cam-panel input[type=range] { width: 100%; accent-color: var(--accent); }
+.cam-panel b { font: 500 10px var(--mono); color: var(--text-2); text-align: right; }
+body.cam-on #viewport::after { display: none; }
+@media (max-width: 520px) { .cam-panel { right: 12px; bottom: 214px; } }
 @media (max-width: 520px) { body.touch[data-mode=walk] .modebar { bottom: 156px; } } /* narrow phones: lift the mode bar above the sticks */
 .quick { position: absolute; z-index: 4; right: 12px; top: 128px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .quick { gap: 6px; }
@@ -205,6 +214,8 @@ body[data-mode=xr] .quick, body[data-mode=cam-ar] .quick { display: none; }
   body:not(.touch) .fly { left: 8px; }
   .joystick.right { right: 8px; bottom: 8px; }
   .gyro-btn { right: 8px; bottom: 112px; height: 28px; padding: 0 10px 0 9px; }
+  .gyro-btn.cam-btn { bottom: 146px; }
+  .cam-panel { right: 116px; bottom: 112px; width: 196px; padding: 6px 8px; gap: 4px; }
   /* short screen: Capture / Mark / Group go in a row at the top, next to the compass, so the right edge stays free for the look stick */
   .quick { right: 58px; top: 8px; transform: none; gap: 6px; flex-direction: row; align-items: center; } .quick button { width: 50px; height: 46px; font-size: 10px; } .quick .chip { height: 32px; width: 64px; }
   .quick .chip span { max-width: 58px; }
