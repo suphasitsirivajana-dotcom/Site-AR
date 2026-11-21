@@ -51,10 +51,10 @@ def icon(size):
         d = min(seg_dist(X, Y, a[0], a[1], b[0], b[1]) for a, b in segs)
         if d < 11:
             k = (X + Y) / 1024  # gradient cyan -> violet
-            col = [int(56 + (124 - 56) * k), int(225 + (92 - 225) * k), 255]
+            col = [int(59 + (96 - 59) * k), int(130 + (165 - 130) * k), int(246 + (250 - 246) * k)]
         dc = math.hypot(X - 256, Y - 256)
         if dc < 26:
-            col = [56, 225, 255]
+            col = [96, 165, 250]
         return (col[0], col[1], col[2], 255)
     return px
 

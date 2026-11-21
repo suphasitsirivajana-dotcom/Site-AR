@@ -1,5 +1,5 @@
 // SiteAR service worker: app shell cache-first, CDN libraries cached on first use → works offline on site.
-const VERSION = 'sitear-v1.2.0';
+const VERSION = 'sitear-v1.4.0';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/viewer.js', './js/loaders.js', './js/geo.js', './js/store.js', './js/project.js', './js/sensors.js',

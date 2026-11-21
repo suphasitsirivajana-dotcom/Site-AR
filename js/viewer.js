@@ -45,10 +45,10 @@ function youTexture() {
   return canvasTex('you', 128, 128, (g, w, h) => {
     const cx = w / 2, cy = h / 2;
     const grd = g.createRadialGradient(cx, cy, 6, cx, cy, 62);
-    grd.addColorStop(0, 'rgba(56,225,255,.55)'); grd.addColorStop(1, 'rgba(56,225,255,0)');
+    grd.addColorStop(0, 'rgba(59,130,246,.55)'); grd.addColorStop(1, 'rgba(59,130,246,0)');
     g.fillStyle = grd; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, 62, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55); g.closePath(); g.fill();
     g.beginPath(); g.arc(cx, cy, 17, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
-    g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fillStyle = '#1aa7ff'; g.fill();
+    g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fillStyle = '#3b82f6'; g.fill();
   });
 }
 
@@ -68,7 +68,7 @@ export class Viewer extends EventTarget {
     const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(40, 80, 25); s.add(sun);
     const fill = new THREE.DirectionalLight(0x9fc4ff, 0.5); fill.position.set(-40, 30, -30); s.add(fill);
 
-    this.grid = new THREE.GridHelper(600, 600, 0x26313d, 0x161c23);
+    this.grid = new THREE.GridHelper(600, 600, 0x1f2f4d, 0x111b2e);
     this.grid.material.transparent = true; this.grid.material.opacity = 0.55; this.grid.material.depthWrite = false;
     s.add(this.grid);
 
@@ -383,7 +383,7 @@ export class Viewer extends EventTarget {
     this.clearHighlight();
     const model = this.getModel(modelId);
     if (!model || eid == null) return;
-    const mat = new THREE.MeshBasicMaterial({ color: 0x38e1ff, transparent: true, opacity: 0.45, depthTest: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, clippingPlanes: this.clipPlanes });
+    const mat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.45, depthTest: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, clippingPlanes: this.clipPlanes });
     model.traverse((o) => {
       if (!o.isMesh || !o.geometry.attributes.eid) return;
       const ids = o.geometry.attributes.eid.array, idx = o.geometry.index.array;
@@ -438,9 +438,9 @@ export class Viewer extends EventTarget {
   // ------------------------------------------------ geo objects (you, track, anchor, control points)
   _buildGeoObjects() {
     const you = (this.you = new THREE.Group());
-    const accMat = new THREE.MeshBasicMaterial({ color: 0x38e1ff, transparent: true, opacity: 0.1, depthTest: false, side: THREE.DoubleSide });
+    const accMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.1, depthTest: false, side: THREE.DoubleSide });
     this.youAcc = new THREE.Mesh(new THREE.CircleGeometry(1, 64), accMat); this.youAcc.rotation.x = -Math.PI / 2;
-    this.youRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: 0x38e1ff, transparent: true, opacity: 0.6, depthTest: false, side: THREE.DoubleSide }));
+    this.youRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6, depthTest: false, side: THREE.DoubleSide }));
     this.youRing.rotation.x = -Math.PI / 2;
     this.youDot = new THREE.Sprite(new THREE.SpriteMaterial({ map: youTexture(), depthTest: false, sizeAttenuation: false, transparent: true }));
     this.youDot.scale.set(0.1, 0.1, 1);
@@ -448,7 +448,7 @@ export class Viewer extends EventTarget {
     you.add(this.youAcc, this.youRing, this.youDot); you.visible = false;
     this.geo.add(you);
 
-    this.track = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x7c5cff, transparent: true, opacity: 0.95, depthTest: false }));
+    this.track = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.95, depthTest: false }));
     this.track.renderOrder = 980; this.track.frustumCulled = false;
     this.geo.add(this.track);
     this.badges = new THREE.Group(); this.geo.add(this.badges);
@@ -503,7 +503,7 @@ export class Viewer extends EventTarget {
   //  Touch:  1 finger = orbit · 2 fingers = pinch-zoom at midpoint + pan
   //  No inertia; orbit pivots around the point under the cursor (green ball, like Revit).
   _initNav() {
-    const pm = new THREE.MeshBasicMaterial({ color: 0x3ddc97, transparent: true, opacity: 0.9, depthTest: false });
+    const pm = new THREE.MeshBasicMaterial({ color: 0x7aa7e8, transparent: true, opacity: 0.9, depthTest: false });
     this.pivotBall = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), pm);
     this.pivotBall.renderOrder = 999; this.pivotBall.visible = false;
     this.scene.add(this.pivotBall);
@@ -725,15 +725,20 @@ export class Viewer extends EventTarget {
 
   _walkUpdate(dt) {
     const w = this.walk, cam = this.persp, k = w.keys;
+    const gyroOn = w.gyro && this.orientSource && this.orientSource.ready;
     if ((w.look.x || w.look.y) && !this.navLocked) { // right stick: turn / look up-down (rate control, like a game pad)
-      w.yaw -= w.look.x * 1.9 * dt;
-      w.pitch = THREE.MathUtils.clamp(w.pitch - w.look.y * 1.3 * dt, -1.45, 1.45);
+      if (gyroOn) this.headingTrim = (this.headingTrim || 0) - THREE.MathUtils.radToDeg(w.look.x * 1.9 * dt); // gyro on: stick still turns left/right
+      else {
+        w.yaw -= w.look.x * 1.9 * dt;
+        w.pitch = THREE.MathUtils.clamp(w.pitch - w.look.y * 1.3 * dt, -1.45, 1.45);
+      }
     }
-    if (w.gyro && this.orientSource && this.orientSource.ready) {
+    if (gyroOn) { // optional: the view turns / tilts with the phone (like looking through a window)
       const q = this.orientSource.getQuaternion();
       const qy = new THREE.Quaternion().setFromAxisAngle(UP, THREE.MathUtils.degToRad((this.bearing || 0) + (this.headingTrim || 0)));
       cam.quaternion.copy(qy.multiply(q));
-      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion); w.yaw = Math.atan2(-d.x, -d.z);
+      const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+      if (Math.hypot(d.x, d.z) > 0.2) w.yaw = Math.atan2(-d.x, -d.z); // walking direction = where you look (ignored when looking straight down)
     } else cam.rotation.set(w.pitch, w.yaw, 0, 'YXZ');
     if (this.navLocked) return;
     const fwd = new THREE.Vector3(-Math.sin(w.yaw), 0, -Math.cos(w.yaw));

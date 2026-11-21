@@ -9,10 +9,10 @@ export const uuid = () =>
     }));
 
 export const MARKUP_TYPES = {
-  capture: { label: 'Capture', th: 'ภาพ', color: '#b48cff', icon: 'photo' },
-  comment: { label: 'Comment', th: 'คอมเมนต์', color: '#38e1ff', icon: 'comment' },
-  note: { label: 'Note', th: 'โน้ต', color: '#ffc145', icon: 'note' },
-  issue: { label: 'Issue', th: 'ปัญหา', color: '#ff5c7a', icon: 'issue' }
+  capture: { label: 'Capture', color: '#93c5fd', icon: 'photo' },
+  comment: { label: 'Comment', color: '#3b82f6', icon: 'comment' },
+  note: { label: 'Note', color: '#9cc2f5', icon: 'note' },
+  issue: { label: 'Issue', color: '#2b5fd9', icon: 'issue' }
 };
 export const STATUSES = {
   open: { label: 'Open', bcf: 'Open' },
@@ -23,7 +23,7 @@ export const STATUSES = {
 export const PRIORITIES = { low: 'Low', normal: 'Normal', high: 'High' };
 
 export function statusColor(m) {
-  if (m.status === 'resolved') return '#3ddc97';
+  if (m.status === 'resolved') return '#7aa7e8';
   if (m.status === 'closed') return '#6b7686';
   return (MARKUP_TYPES[m.type] || MARKUP_TYPES.comment).color;
 }

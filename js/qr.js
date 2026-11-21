@@ -83,28 +83,28 @@ export async function cpSheet(cp, projectName, payload) {
   const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
   g.fillStyle = '#0b0d10'; g.fillRect(0, 0, W, 22 * PX);
-  g.fillStyle = '#38e1ff'; g.font = `700 ${7 * PX}px Inter, sans-serif`; g.fillText('SiteAR', 12 * PX, 15 * PX);
+  g.fillStyle = '#3b82f6'; g.font = `700 ${7 * PX}px Inter, sans-serif`; g.fillText('SiteAR', 12 * PX, 15 * PX);
   g.fillStyle = '#fff'; g.font = `500 ${4 * PX}px Inter, sans-serif`; g.textAlign = 'right'; g.fillText('CONTROL POINT', W - 12 * PX, 14.5 * PX); g.textAlign = 'left';
   const qy = 40 * PX; drawQR(g, payload, (W - S) / 2, qy, S);
   // marks outside the symbol: which way is "up" on the printed QR
   g.fillStyle = '#556070'; g.font = `500 ${3.2 * PX}px Inter, sans-serif`; g.textAlign = 'center';
-  g.fillText('▲ ด้านบน (ด้านที่มีสี่เหลี่ยมใหญ่ 2 ตัว)', W / 2, qy - 6 * PX);
+  g.fillText('▲ TOP (the side with two large squares)', W / 2, qy - 6 * PX);
   let y = qy + S + 16 * PX;
   g.fillStyle = '#0b0d10'; g.font = `700 ${9 * PX}px Inter, sans-serif`; g.fillText(cp.name, W / 2, y); y += 10 * PX;
   g.font = `500 ${4 * PX}px "JetBrains Mono", monospace`;
   g.fillText(`X ${cp.position.x.toFixed(3)}   Y ${cp.position.y.toFixed(3)}   Z ${cp.position.z.toFixed(3)} m`, W / 2, y); y += 8 * PX;
   g.fillStyle = '#556070'; g.font = `400 ${3.4 * PX}px Inter, sans-serif`;
   const mount = cp.mount === 'wall'
-    ? `ติดบนผนัง ตั้งตรง · หน้า QR หันไปทาง ${Math.round(cp.heading || 0)}° (0° = +Y, 90° = +X)`
-    : `วางบนพื้น · ด้านบนของ QR ชี้ไปทาง ${Math.round(cp.heading || 0)}° (0° = +Y, 90° = +X)`;
+    ? `Wall mounted, upright · QR faces ${Math.round(cp.heading || 0)}° (0° = +Y, 90° = +X)`
+    : `On the floor · top of the QR points to ${Math.round(cp.heading || 0)}° (0° = +Y, 90° = +X)`;
   g.fillText(mount, W / 2, y); y += 6 * PX;
-  g.fillText(`ขนาด QR ${(S / PX / 10).toFixed(1)} cm · ${projectName.slice(0, 50)}`, W / 2, y);
+  g.fillText(`QR size ${(S / PX / 10).toFixed(1)} cm · ${projectName.slice(0, 50)}`, W / 2, y);
   // 10 cm ruler
   const rx = (W - 100 * PX) / 2, ry = H - 22 * PX;
   g.fillStyle = '#0b0d10'; g.fillRect(rx, ry, 100 * PX, 0.6 * PX);
   for (let i = 0; i <= 10; i++) g.fillRect(rx + i * 10 * PX - 0.3 * PX, ry - (i % 5 ? 2 : 3.5) * PX, 0.6 * PX, (i % 5 ? 2 : 3.5) * PX + 0.6 * PX);
   g.fillStyle = '#556070'; g.font = `400 ${3 * PX}px Inter, sans-serif`;
-  g.fillText('แถบนี้ต้องยาว 10 cm — ถ้าไม่ใช่ ให้พิมพ์ที่ 100% (Actual size) หรือวัด QR จริงแล้วใส่ขนาดใน SiteAR', W / 2, ry + 8 * PX);
+  g.fillText('This bar must measure 10 cm — if not, print at 100% (Actual size) or enter the measured QR size in SiteAR', W / 2, ry + 8 * PX);
   return c.toDataURL('image/png');
 }
 

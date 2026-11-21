@@ -34,7 +34,7 @@ export class ARController extends EventTarget {
       <div class="ar-top">
         <div class="ar-title"><span class="live-dot"></span>${kind === 'xr' ? 'WebXR AR' : 'Camera AR'}<span class="ar-status" id="ar-status"></span></div>
         <div class="ar-right">
-          ${kind === 'cam' ? `<button class="ar-btn qrb" data-ar="tripod" aria-label="Tripod">${icon('anchor')}<span>ขาตั้ง</span></button><button class="ar-btn qrb" data-ar="qrlock" aria-label="QR Lock">${icon('qr')}<span>QR</span></button><button class="ar-btn fwd" data-ar="fwd" aria-label="Step forward">${icon('follow')}<span>เดิน</span></button>` : ''}
+          ${kind === 'cam' ? `<button class="ar-btn qrb" data-ar="tripod" aria-label="Tripod">${icon('anchor')}<span>Tripod</span></button><button class="ar-btn qrb" data-ar="qrlock" aria-label="QR Lock">${icon('qr')}<span>QR</span></button><button class="ar-btn fwd" data-ar="fwd" aria-label="Step forward">${icon('follow')}<span>Step</span></button>` : ''}
           <button class="ar-btn icon-only" data-ar="exit" aria-label="Exit AR">${icon('x')}</button>
         </div>
       </div>
@@ -76,7 +76,7 @@ export class ARController extends EventTarget {
       if (a === 'rotl') this._setTrim(this.trim - 1);
       if (a === 'rotr') this._setTrim(this.trim + 1);
       if (a === 'align') this.alignXR();
-      if (a === 'recal') { this.orient.recalibrate(); this._setTrim(0); this.toast('กลับไปใช้เข็มทิศ — ถือเครื่องตั้งตรงและนิ่ง ๆ', 'info'); }
+      if (a === 'recal') { this.orient.recalibrate(); this._setTrim(0); this.toast('Back to the compass — hold the device upright and still', 'info'); }
       if (a === 'face') this.alignToFace();
       if (a === 'qrlock') this._toggleQrLock();
       if (a === 'tripod') this.toggleTripod().then(() => this._syncTripod());
@@ -126,7 +126,7 @@ export class ARController extends EventTarget {
     const q = this.active === 'cam' && this._camQ ? this._camQ : this.viewer.persp.quaternion; // the TARGET orientation, not the smoothed one
     let f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
     if (Math.abs(f.y) > 0.85) {
-      if (!useTop) { this.toast('เงยหน้าเครื่องให้มองระดับสายตาก่อน แล้วกดอีกครั้ง', 'warn'); return false; }
+      if (!useTop) { this.toast('Hold the device at eye level, then press again', 'warn'); return false; }
       f = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
     }
     const hm = modelHeadingOfRawDir(f);
@@ -139,7 +139,7 @@ export class ARController extends EventTarget {
   _toggleQrLock() {
     this.qrLock = !this.qrLock;
     const b = this.overlay.querySelector('[data-ar=qrlock]'); if (b) b.classList.toggle('on', this.qrLock);
-    this._qrLabel(this.qrLock ? 'เล็งกล้องไปที่ QR (ห่าง ≤ 2 m)' : '');
+    this._qrLabel(this.qrLock ? 'Point the camera at a QR (≤ 2 m away)' : '');
     this._qt = 0;
   }
   _qrLabel(t) { const el = this.overlay.querySelector('#ar-hint'); if (el) { el.textContent = t; el.hidden = !t; } }
@@ -152,7 +152,7 @@ export class ARController extends EventTarget {
     if (!v.videoWidth) return;
     let det = null;
     try { det = detectQR(v); } catch (e) { det = null; }
-    if (!det) { if (performance.now() - (this._qrSeen || 0) > 2000) this._qrLabel('ไม่เจอ QR — เล็งให้เห็นเต็มกรอบ ห่าง ≤ 2 m'); return; }
+    if (!det) { if (performance.now() - (this._qrSeen || 0) > 2000) this._qrLabel('No QR found — keep the whole QR in view, ≤ 2 m away'); return; }
     const cv = this.viewer.canvas, cw = cv.clientWidth, ch = cv.clientHeight;
     const s = Math.max(cw / det.vw, ch / det.vh); // object-fit: cover
     const f = (ch / 2) / Math.tan(THREE.MathUtils.degToRad(this.viewer.persp.fov) / 2) / s; // focal length in VIDEO pixels
@@ -166,8 +166,8 @@ export class ARController extends EventTarget {
   }
   alignToFace() {
     const h = this.getFaceHeading && this.getFaceHeading();
-    if (h == null) return this.toast('ยังไม่มี Face Point — ออกจาก AR แล้วไป Site → Face Point (ต้องตั้งจุดที่ยืนด้วย)', 'warn', 5000);
-    if (this.alignToHeading(h)) this.toast('ล็อกทิศแล้ว — หมุนตัวได้เลย', 'ok', 2500);
+    if (h == null) return this.toast('No Face Point yet — leave AR and use Site → Face Point (your position must be set too)', 'warn', 5000);
+    if (this.alignToHeading(h)) this.toast('Heading locked — you can turn around now', 'ok', 2500);
     // (the QR Lock path passes useTop + a smoothing gain)
   }
   // one-finger drag left/right turns the model overlay to match the real world (the drag direction = the way the model moves)
@@ -285,7 +285,7 @@ export class ARController extends EventTarget {
     v.setMode('xr');
     v.root.visible = false;
     v.setOpacityFactor(this.settings.arOpacity);
-    this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.09, 0.12, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x38e1ff }));
+    this.reticle = new THREE.Mesh(new THREE.RingGeometry(0.09, 0.12, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3b82f6 }));
     const dot = new THREE.Mesh(new THREE.CircleGeometry(0.02, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     this.reticle.add(dot);
     this.reticle.matrixAutoUpdate = false; this.reticle.visible = false;
@@ -360,8 +360,8 @@ export class ARController extends EventTarget {
     v.headingTrim = this.trim; // keep the walking direction (step counter) in sync with the overlay trim
     this._status(this.orient.hasTrueNorth ? 'compass OK' : 'waiting for compass…');
     this._hint(this.getPositionRaw()
-      ? 'โมเดลไม่ตรงกับของจริง? ลากนิ้วซ้าย/ขวาเพื่อหมุนให้ตรง · หรือหันไปที่ Face Point แล้วกด Face'
-      : 'ยังไม่มีตำแหน่ง — ตั้งจุดที่ยืน (Site → I\'m Here), Scan QR หรือเปิด GPS');
+      ? 'Model not lined up? Drag left / right to rotate it · or face the Face Point and press Face'
+      : 'No position yet — set where you stand (Site → I\'m Here), scan a QR or turn on GPS');
     setTimeout(() => this._hint(''), 8000);
     this._syncSteps(); this._syncTripod();
   }
@@ -379,8 +379,8 @@ export class ARController extends EventTarget {
     this._qrTick(dt);
     if ((this._st = (this._st || 0) + dt) > 0.3) {
       this._st = 0;
-      const hd = this.orient.hasTrueNorth ? `${this.orient.getHeading()?.toFixed(0)}°` : 'ไม่มีเข็มทิศ';
-      const stp = this.stepsActive && this.stepsActive() ? ` · ${this.stepCount()} ก้าว` : ' · Steps ปิด';
+      const hd = this.orient.hasTrueNorth ? `${this.orient.getHeading()?.toFixed(0)}°` : 'no compass';
+      const stp = this.stepsActive && this.stepsActive() ? ` · ${this.stepCount()} steps` : ' · steps off';
       this._status(`${hd}${stp}`);
       this._syncSteps();
     }

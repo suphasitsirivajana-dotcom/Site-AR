@@ -37,7 +37,7 @@ const viewer = new Viewer($('#viewport'), $('#c'));
 viewer.walk.eye = settings.eye;
 viewer.setGrid(settings.grid);
 viewer.scopeOn = settings.scope; viewer.scopeFactor = settings.scopeFactor;
-viewer.addEventListener('scope-limit', () => toast('ถึงขอบ Scope box — กด Home หรือปิด Scope ใน View', 'info', 1400));
+viewer.addEventListener('scope-limit', () => toast('Scope limit reached — press Home or turn off Scope in View', 'info', 1400));
 const gps = new GPS();
 const orient = new DeviceOrient();
 const steps = new StepTracker();
@@ -53,44 +53,49 @@ const ar = new ARController({
 ar.addEventListener('end', () => { syncModeUI(); });
 
 // ================================================================ ribbon
+// Shown in the status bar so you can see at a glance whether a phone/iPad has picked up the latest upload.
+// Bump this together with VERSION in sw.js every time files are uploaded.
+const APP_VERSION = '1.4.0';
+
 // Location features (GPS, step tracking, QR control points, tripod, Walk&Mark, AR overlay) are SHELVED for now.
 // All the code is still here — set this to true to bring every button back.
 const LOCATION_FEATURES = false;
 const LOCATION_CMDS = new Set(['walk-mark', 'self-mark', 'face-point', 'set-location', 'gps', 'follow', 'qr-create', 'qr-scan', 'track', 'track-clear',
-  'heading-2pt', 'compass', 'ar-xr', 'ar-cam', 'walk-track', 'track-mode', 'steps', 'gyro']);
+  'heading-2pt', 'compass', 'ar-xr', 'ar-cam', 'walk-track', 'track-mode', 'steps']);
 
 const RIBBON_FULL = [
   { id: 'home', label: 'Home', groups: [
     { label: 'Project', items: [
-      { cmd: 'new', icon: 'newfile', label: 'New', tip: 'โปรเจกต์ใหม่' },
-      { cmd: 'open-model', icon: 'open', label: 'Open Model', tip: 'เปิดไฟล์ IFC / DXF / GLB / OBJ' },
-      { cmd: 'projects', icon: 'layers', label: 'Projects', tip: 'โปรเจกต์ที่เก็บในเครื่อง' },
-      { cmd: 'save', icon: 'save', label: 'Save', tip: 'ดาวน์โหลดไฟล์โปรเจกต์ (.sitear.json)' }] },
+      { cmd: 'new', icon: 'newfile', label: 'New', tip: 'New project' },
+      { cmd: 'open-model', icon: 'open', label: 'Open Model', tip: 'Open an IFC / DXF / GLB / OBJ file' },
+      { cmd: 'projects', icon: 'layers', label: 'Projects', tip: 'Projects stored on this device' },
+      { cmd: 'save', icon: 'save', label: 'Save', tip: 'Download the project file (.sitear.json)' }] },
     { label: 'Navigate', items: [
-      { cmd: 'walk-mark', icon: 'walk', label: 'Walk&Mark', tip: 'โหมดง่าย: แตะที่ยืน → เดิน → มาร์คตรงที่ยืน' },
-      { cmd: 'mode-orbit', icon: 'orbit', label: '3D', tip: 'หมุนดูโมเดล 3D' },
-      { cmd: 'mode-plan', icon: 'plan', label: 'Plan', tip: 'มุมมองแปลน (ตัดระดับ)' },
-      { cmd: 'mode-walk', icon: 'walk', label: 'Walk', tip: 'เดินในโมเดล (WASD / จอยสติ๊ก)' },
-      { cmd: 'home', icon: 'home', label: 'Home', tip: 'กลับมุมมอง Home (H)' },
-      { cmd: 'set-home', icon: 'sethome', label: 'Set Home', tip: 'ตั้งมุมมองปัจจุบันเป็น Home' },
-      { cmd: 'fit', icon: 'fit', label: 'Fit', tip: 'ซูมให้เห็นทั้งโมเดล' }] },
+      { cmd: 'walk-mark', icon: 'walk', label: 'Walk&Mark', tip: 'Simple mode: tap where you stand → walk → mark where you stand' },
+      { cmd: 'mode-orbit', icon: 'orbit', label: '3D', tip: 'Orbit the 3D model' },
+      { cmd: 'mode-plan', icon: 'plan', label: 'Plan', tip: 'Plan view (section cut)' },
+      { cmd: 'mode-walk', icon: 'walk', label: 'Walk', tip: 'Walk through the model (WASD / sticks)' },
+      { cmd: 'gyro', icon: 'gyro', label: 'Gyro', tip: 'Optional: turn the device to look around (Walk mode)' },
+      { cmd: 'home', icon: 'home', label: 'Home', tip: 'Back to the Home view (H)' },
+      { cmd: 'set-home', icon: 'sethome', label: 'Set Home', tip: 'Set the current view as Home' },
+      { cmd: 'fit', icon: 'fit', label: 'Fit', tip: 'Zoom to fit the whole model' }] },
     { label: 'Markup', items: [
       { cmd: 'select', icon: 'select', label: 'Select' },
-      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'แคปภาพมุมมองนี้เก็บเข้ากลุ่ม (C)' },
-      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'มาร์คตรงเป้ากลางจอ (M)' },
-      { cmd: 'groups', icon: 'layers', label: 'Group', tip: 'จัดกลุ่มภาพ/มาร์คต่อกัน' },
+      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'Capture this view into the active group (C)' },
+      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'Mark the point under the crosshair (M)' },
+      { cmd: 'groups', icon: 'layers', label: 'Group', tip: 'Group captures and marks in sequence' },
       { cmd: 'save-view', icon: 'bookmark', label: 'Save View' }] }] },
   { id: 'markup', label: 'Markup', groups: [
     { label: 'Create', items: [
-      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'แคปภาพมุมมองนี้เก็บเข้ากลุ่ม (C)' },
-      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'มาร์คตรงเป้ากลางจอ (M)' },
+      { cmd: 'capture', icon: 'photo', label: 'Capture', tip: 'Capture this view into the active group (C)' },
+      { cmd: 'mark-center', icon: 'pin', label: 'Mark', tip: 'Mark the point under the crosshair (M)' },
       { cmd: 'groups', icon: 'layers', label: 'Group' },
       { cmd: 'mk-comment', icon: 'comment', label: 'Comment' },
       { cmd: 'mk-note', icon: 'note', label: 'Note' },
       { cmd: 'mk-issue', icon: 'issue', label: 'Issue' }] },
     { label: 'Edit', items: [
       { cmd: 'mk-edit', icon: 'edit', label: 'Edit' },
-      { cmd: 'mk-lock', icon: 'lock', label: 'Lock', tip: 'ล็อคมาร์คที่เลือก (กันแก้ไข/ลบ)' },
+      { cmd: 'mk-lock', icon: 'lock', label: 'Lock', tip: 'Lock the selected markup (no edit / delete)' },
       { cmd: 'mk-resolve', icon: 'resolve', label: 'Resolve' },
       { cmd: 'mk-delete', icon: 'trash', label: 'Delete' }] },
     { label: 'Show', items: [
@@ -102,49 +107,49 @@ const RIBBON_FULL = [
       { cmd: 'panel-views', icon: 'views', label: 'Views' }] },
     { label: 'Display', items: [
       { cmd: 'xray', icon: 'xray', label: 'X-Ray' },
-      { cmd: 'section', icon: 'section', label: 'Section', tip: 'ตัดระดับ (plan cut)' },
+      { cmd: 'section', icon: 'section', label: 'Section', tip: 'Horizontal section (plan cut)' },
       { cmd: 'grid', icon: 'grid', label: 'Grid' },
       { cmd: 'models', icon: 'layers', label: 'Models' }] },
     { label: 'Navigation', items: [
-      { cmd: 'home', icon: 'home', label: 'Home', tip: 'กลับมุมมอง Home (H)' },
-      { cmd: 'set-home', icon: 'sethome', label: 'Set Home', tip: 'ตั้งมุมมองปัจจุบันเป็น Home' },
-      { cmd: 'scope', icon: 'scope', label: 'Scope', tip: 'Scope box: กันโมเดลหลุดจอ / กล้องไม่ออกไกลเกินขอบเขต' },
-      { cmd: 'nav-lock', icon: 'navlock', label: 'Lock View', tip: 'ล็อคมุมมอง ไม่ให้หมุน/เลื่อน' },
+      { cmd: 'home', icon: 'home', label: 'Home', tip: 'Back to the Home view (H)' },
+      { cmd: 'set-home', icon: 'sethome', label: 'Set Home', tip: 'Set the current view as Home' },
+      { cmd: 'scope', icon: 'scope', label: 'Scope', tip: 'Scope box: keep the model on screen and the camera in range' },
+      { cmd: 'nav-lock', icon: 'navlock', label: 'Lock View', tip: 'Lock the view (no orbit / pan)' },
       { cmd: 'fit', icon: 'fit', label: 'Fit' }] }] },
   { id: 'site', label: 'Site', groups: [
     { label: 'Location', items: [
-      { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'Self-mark: แตะตำแหน่งที่ยืนอยู่บนแบบ (เช่น ข้างเสา) — ง่ายสุด ไม่ต้องเซอร์เวย์' },
-      { cmd: 'face-point', icon: 'target', label: 'Face Point', tip: 'แตะจุดที่คุณกำลังหันหน้าไปหา (เช่น เสาต้นข้างหน้า) เพื่อล็อกทิศ' },
-      { cmd: 'set-location', icon: 'anchor', label: 'Set Location', tip: 'ยืนที่จุดหนึ่ง → แตะจุดเดียวกันบนแบบ → จับ GPS' },
-      { cmd: 'gps', icon: 'gps', label: 'Locate Me', tip: 'เปิด GPS แสดงตำแหน่งบนแบบ' },
-      { cmd: 'follow', icon: 'follow', label: 'Follow', tip: 'กล้อง Walk เดินตาม GPS' }] },
+      { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'Self-mark: tap where you stand on the plan (e.g. next to a column)' },
+      { cmd: 'face-point', icon: 'target', label: 'Face Point', tip: 'Tap the point you are facing (e.g. the next column) to lock the heading' },
+      { cmd: 'set-location', icon: 'anchor', label: 'Set Location', tip: 'Stand on a point → tap it on the plan → capture GPS' },
+      { cmd: 'gps', icon: 'gps', label: 'Locate Me', tip: 'Turn on GPS and show your position on the plan' },
+      { cmd: 'follow', icon: 'follow', label: 'Follow', tip: 'Walk camera follows GPS' }] },
     { label: 'QR control point', items: [
-      { cmd: 'qr-create', icon: 'qr', label: 'Create QR', tip: 'สร้าง QR ที่พิกัดในแบบ ให้เซอร์เวย์ยิงจุดไว้' },
-      { cmd: 'qr-scan', icon: 'scan', label: 'Scan QR', tip: 'สแกน QR หน้างานเพื่อยึดตำแหน่ง' }] },
+      { cmd: 'qr-create', icon: 'qr', label: 'Create QR', tip: 'Create a QR at model coordinates for the surveyor to set out' },
+      { cmd: 'qr-scan', icon: 'scan', label: 'Scan QR', tip: 'Scan a QR on site to lock your position' }] },
     { label: 'Path', items: [
-      { cmd: 'track', icon: 'path', label: 'Path', tip: 'แสดงเส้นทางที่เดิน' },
+      { cmd: 'track', icon: 'path', label: 'Path', tip: 'Show the walked path' },
       { cmd: 'track-clear', icon: 'erase', label: 'Clear' }] },
     { label: 'Calibrate', items: [
-      { cmd: 'heading-2pt', icon: 'twopoint', label: '2nd Point', tip: 'ปรับทิศด้วยจุดที่ 2 (แม่นกว่าเข็มทิศ)' },
+      { cmd: 'heading-2pt', icon: 'twopoint', label: '2nd Point', tip: 'Refine heading with a second point (better than the compass)' },
       { cmd: 'compass', icon: 'compass', label: 'Compass' }] }] },
   { id: 'ar', label: 'AR', groups: [
     { label: 'Augmented reality', items: [
       { cmd: 'ar-xr', icon: 'ar', label: 'WebXR AR', tip: 'Android Chrome (ARCore) — tracking 6DoF' },
-      { cmd: 'ar-cam', icon: 'camera', label: 'Camera AR', tip: 'iPhone / iPad / ทุกเครื่อง — กล้อง + gyro + GPS/QR' }] },
+      { cmd: 'ar-cam', icon: 'camera', label: 'Camera AR', tip: 'iPhone / iPad / any device — camera + gyro + GPS/QR' }] },
     { label: 'Walkthrough', items: [
-      { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'แตะตำแหน่งที่ยืนอยู่บนแบบ' },
+      { cmd: 'self-mark', icon: 'pin', label: "I'm Here", tip: 'Tap where you stand on the plan' },
       { cmd: 'mode-walk', icon: 'walk', label: 'Walk' },
-      { cmd: 'walk-track', icon: 'walk', label: 'Walk Track', tip: 'โหมดคนเดิน: เดินจริง → โมเดลขยับตามก้าว + หันตามมือถือ' },
-      { cmd: 'track-mode', icon: 'path', label: 'Tracking', tip: 'สลับวิธีตามตำแหน่ง: Hybrid (นับก้าว+GPS) → Steps (นับก้าวอย่างเดียว) → GPS' },
-      { cmd: 'gyro', icon: 'gyro', label: 'Gyro Look', tip: 'หันมือถือเพื่อมองรอบ' },
+      { cmd: 'walk-track', icon: 'walk', label: 'Walk Track', tip: 'Walk for real: the model follows your steps and the phone heading' },
+      { cmd: 'track-mode', icon: 'path', label: 'Tracking', tip: 'Switch tracking: Hybrid (steps + GPS) → Steps only → GPS' },
+      { cmd: 'gyro', icon: 'gyro', label: 'Gyro Look', tip: 'Turn the phone to look around' },
       { cmd: 'follow', icon: 'follow', label: 'Follow GPS' }] },
     { label: 'Setup', items: [{ cmd: 'settings', icon: 'sliders', label: 'Settings' }] }] },
   { id: 'share', label: 'Export', groups: [
     { label: 'openBIM (BCF 3.0)', items: [
-      { cmd: 'bcf-export', icon: 'bcf', label: 'Export BCF', tip: 'เปิดใน Revit / Navisworks / Solibri / BIMcollab' },
+      { cmd: 'bcf-export', icon: 'bcf', label: 'Export BCF', tip: 'Open in Revit / Navisworks / Solibri / BIMcollab' },
       { cmd: 'bcf-import', icon: 'import', label: 'Import BCF' }] },
     { label: 'Data', items: [
-      { cmd: 'json-export', icon: 'json', label: 'Project JSON', tip: 'ไฟล์โปรเจกต์ (ใช้กับ Unity / Revit script)' },
+      { cmd: 'json-export', icon: 'json', label: 'Project JSON', tip: 'Project file (for Unity / Revit scripts)' },
       { cmd: 'json-import', icon: 'import', label: 'Import JSON' },
       { cmd: 'csv-export', icon: 'table', label: 'CSV' }] },
     { label: 'Help', items: [{ cmd: 'settings', icon: 'sliders', label: 'Settings' }, { cmd: 'revit-guide', icon: 'info', label: 'Revit Guide' }] }] }
@@ -211,7 +216,7 @@ async function onCommand(cmd) {
     case 'qr-create': return startCPCreate();
     case 'qr-scan': return scanQR();
     case 'track': settings.showTrack = !settings.showTrack; saveSettings(); renderTrack(); return syncToggles();
-    case 'track-clear': if (await confirmBox('Clear path', 'ลบเส้นทางที่บันทึกไว้ทั้งหมด?', 'Clear', true)) { P.tracks = []; save(); renderTrack(); } return;
+    case 'track-clear': if (await confirmBox('Clear path', 'Delete all recorded paths?', 'Clear', true)) { P.tracks = []; save(); renderTrack(); } return;
     case 'heading-2pt': return twoPointWizard();
     case 'compass': return compassDialog();
     case 'ar-xr': return startXR();
@@ -225,7 +230,7 @@ async function onCommand(cmd) {
 }
 function withSel(fn) {
   const m = app.project.markups.find((x) => x.id === app.sel);
-  if (!m) { toast('เลือกมาร์คก่อน (แตะหมุดบนโมเดล หรือจากรายการ)', 'warn'); return; }
+  if (!m) { toast('Select a markup first (tap a pin or pick one in the list)', 'warn'); return; }
   fn(m);
 }
 function syncToggles() {
@@ -260,7 +265,7 @@ function setMode(m) {
   if (ar.active) ar.stop();
   const first = m === 'plan' && !app._planSeen;
   viewer.setMode(m);
-  if (m === 'plan' && !app._planHint) { app._planHint = true; toast('โหมด Plan: ลากเพื่อเลื่อน · ซูมด้วยสองนิ้ว · หมุนโมเดลไม่ได้ — กด 3D เพื่อหมุน', 'info', 4500); }
+  if (m === 'plan' && !app._planHint) { app._planHint = true; toast('Plan view: drag to pan · pinch to zoom · switch to 3D to orbit', 'info', 4500); }
   if (first) { app._planSeen = true; if (!viewer.clipOn) setSection(true); viewer.fitAll(); }
   syncModeUI();
 }
@@ -271,6 +276,9 @@ function syncModeUI() {
   $('#joystick').hidden = !(walking && isTouch);
   $('#joystick-look').hidden = !(walking && isTouch);
   $('#fly').hidden = !walking;
+  $('#gyro-btn').hidden = !(walking && isTouch);
+  $('#gyro-btn').classList.toggle('on', !!viewer.walk.gyro);
+  $('#gyro-state').textContent = viewer.walk.gyro ? 'ON' : 'OFF';
   $('#step-btn').hidden = !LOCATION_FEATURES || (app.wm ? app.wm.state !== 'walk' : !(walking && app.loc.stepMode));
   $('#crosshair').hidden = !(viewer.mode === 'cam-ar' || walking); // aim point for Mark / Capture
   $('#quick').hidden = viewer.mode === 'xr' || viewer.mode === 'cam-ar';
@@ -300,7 +308,7 @@ function goHome() {
 function setHome() {
   app.project.app.home = viewer.getViewState();
   save();
-  toast('ตั้งมุมมองนี้เป็น Home แล้ว — กด Home / H เพื่อกลับมา', 'ok');
+  toast('Home view set — press Home / H to come back', 'ok');
 }
 
 function setTool(t, data = null) {
@@ -324,9 +332,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 function startPlace(type, photo = false) {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน (Open Model)', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first (Open Model)', 'warn');
   setTool('place', { type, photo });
-  hint(`แตะบนโมเดล/แบบ ตรงจุดที่ต้องการวาง ${MARKUP_TYPES[type].label}${photo ? ' + Photo' : ''}`, cancelTool);
+  hint(`Tap the model where the ${MARKUP_TYPES[type].label} should go${photo ? ' + Photo' : ''}`, cancelTool);
 }
 
 viewer.addEventListener('tap', async (e) => {
@@ -344,7 +352,7 @@ viewer.addEventListener('tap', async (e) => {
     return clearSelection();
   }
   const hit = viewer.pick(x, y, { markers: false });
-  if (!hit) return toast('ไม่พบพื้นผิว ลองแตะบนโมเดล', 'warn');
+  if (!hit) return toast('No surface there — tap on the model', 'warn');
   const ifc = viewer.worldToIfc(hit.point);
   const data = app.toolData;
   setTool('select');
@@ -398,18 +406,18 @@ async function openProject(p) {
     const f = await store.getFile(rec.fileId);
     if (!f) { rec.missing = true; continue; }
     rec.missing = false;
-    try { await addLoadedModel(rec, f.name, f.data, false); } catch (e) { console.error(e); toast(`โหลด ${rec.name} ไม่สำเร็จ: ${e.message}`, 'error', 5000); }
+    try { await addLoadedModel(rec, f.name, f.data, false); } catch (e) { console.error(e); toast(`Could not load ${rec.name}: ${e.message}`, 'error', 5000); }
   }
   busy(false);
   updateEmptyState();
   refreshAll();
   if (viewer.models.children.length) { if (p.app.home) viewer.setViewState(p.app.home); else viewer.fitAll(false); }
   const missing = p.models.filter((m) => m.missing);
-  if (missing.length) toast(`ไฟล์โมเดลไม่อยู่ในเครื่อง: ${missing.map((m) => m.name).join(', ')} — กด Open Model เพื่อเปิดอีกครั้ง`, 'warn', 7000);
+  if (missing.length) toast(`Model file not on this device: ${missing.map((m) => m.name).join(', ')} — use Open Model to add it again`, 'warn', 7000);
 }
 
 async function addLoadedModel(rec, name, data, isNew) {
-  busy(`กำลังโหลด ${name}…`);
+  busy(`Loading ${name}…`);
   const res = await loadModelFile(name, data, { unitScale: rec.unitScale }, (t) => busy(t));
   viewer.addModel(res.object, rec.id, app.project.app.viewOrigin);
   app._cols = null; // column snap cache
@@ -424,7 +432,7 @@ async function addLoadedModel(rec, name, data, isNew) {
 async function onModelFiles(files) {
   for (const file of files) {
     const ext = extOf(file.name);
-    if (!MODEL_EXT.includes(ext) && !['dwg', 'rvt'].includes(ext)) { toast(`ไม่รองรับ .${ext}`, 'warn'); continue; }
+    if (!MODEL_EXT.includes(ext) && !['dwg', 'rvt'].includes(ext)) { toast(`.${ext} is not supported`, 'warn'); continue; }
     try {
       const data = await file.arrayBuffer();
       const P = app.project;
@@ -439,7 +447,7 @@ async function onModelFiles(files) {
       busy(false);
       save(); updateEmptyState(); refreshAll();
       viewer.fitAll();
-      toast(`โหลด ${file.name} แล้ว`, 'ok');
+      toast(`${file.name} loaded`, 'ok');
       if (res.info.site && !P.geo.anchor) suggestSiteAnchor(res.info);
     } catch (e) {
       busy(false); console.error(e);
@@ -449,7 +457,7 @@ async function onModelFiles(files) {
 }
 
 async function cmdNewProject() {
-  const name = await promptBox('New project', 'ชื่อโปรเจกต์ · Project name', 'Untitled project');
+  const name = await promptBox('New project', 'Project name', 'Untitled project');
   if (name === null) return;
   const p = newProject(name || 'Untitled project');
   await store.putProject(p);
@@ -471,8 +479,8 @@ async function cmdProjects() {
     const id = item.dataset.id, act = e.target.closest('[data-act]')?.dataset.act;
     const p = list.find((x) => x.id === id);
     if (act === 'del') {
-      if (id === app.project.id) return toast('ลบโปรเจกต์ที่เปิดอยู่ไม่ได้', 'warn');
-      if (!(await confirmBox('Delete project', `ลบ "${p.name}" และไฟล์โมเดลในเครื่อง? (กู้คืนไม่ได้)`, 'Delete', true))) return;
+      if (id === app.project.id) return toast('The open project cannot be deleted', 'warn');
+      if (!(await confirmBox('Delete project', `Delete "${p.name}" and its model files on this device? This cannot be undone.`, 'Delete', true))) return;
       for (const md of p.models) await store.deleteFile(md.fileId);
       await store.deleteProject(id); item.remove(); return;
     }
@@ -486,7 +494,7 @@ async function cmdProjects() {
   };
 }
 $('#project-name').onclick = async () => {
-  const n = await promptBox('Rename project', 'ชื่อโปรเจกต์', app.project.name);
+  const n = await promptBox('Rename project', 'Project name', app.project.name);
   if (n) { app.project.name = n; $('#project-name').textContent = n; save(); }
 };
 
@@ -501,7 +509,7 @@ function updateEmptyState() { $('#empty').hidden = viewer.models.children.length
 // ================================================================ markups
 async function ensureAuthor() {
   if (settings.author) return settings.author;
-  const n = await promptBox('Your name', 'ชื่อผู้บันทึก (แสดงใน BCF / Revit)', '');
+  const n = await promptBox('Your name', 'Author name (shown in BCF / Revit)', '');
   settings.author = n || 'Site user'; saveSettings();
   return settings.author;
 }
@@ -548,25 +556,25 @@ function openMarkupEditor(m, isNew, openCamera = false) {
   const opts = (obj, cur) => Object.entries(obj).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${esc(typeof v === 'string' ? v : v.label)}</option>`).join('');
   const body = h(`<div class="mk-editor ${lockedAtOpen ? 'is-locked' : ''}">
     <div class="seg type-seg" id="me-type">${Object.entries(MARKUP_TYPES).map(([k, t]) => `<button type="button" data-t="${k}" class="${draft.type === k ? 'on' : ''}" style="--c:${t.color}">${icon(t.icon)}<span>${t.label}</span></button>`).join('')}</div>
-    <label class="field"><span>หัวข้อ · Title</span><input id="me-title" value="${esc(draft.title)}" placeholder="${esc(markupTitle(draft))}"></label>
-    <label class="field"><span>รายละเอียด · Description</span><textarea id="me-text" rows="4" placeholder="อธิบายสิ่งที่พบ / สิ่งที่ต้องแก้ไข…">${esc(draft.text)}</textarea></label>
+    <label class="field"><span>Title</span><input id="me-title" value="${esc(draft.title)}" placeholder="${esc(markupTitle(draft))}"></label>
+    <label class="field"><span>Description</span><textarea id="me-text" rows="4" placeholder="Describe what you found / what needs fixing…">${esc(draft.text)}</textarea></label>
     <div class="field-row">
       <label class="field"><span>Status</span><select id="me-status">${opts(STATUSES, draft.status)}</select></label>
       <label class="field"><span>Priority</span><select id="me-prio">${opts(PRIORITIES, draft.priority)}</select></label>
       <label class="field"><span>Assigned to</span><input id="me-assign" value="${esc(draft.assignedTo)}" placeholder="—"></label>
     </div>
-    <label class="field"><span>กลุ่ม · Group</span><select id="me-group"><option value="">— ไม่มีกลุ่ม</option>${((app.project.groups) || []).map((g) => `<option value="${g.id}" ${g.id === draft.group ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
-    <div class="field"><span>รูปถ่าย · Photos</span><div class="photos" id="me-photos"></div></div>
+    <label class="field"><span>Group</span><select id="me-group"><option value="">— No group</option>${((app.project.groups) || []).map((g) => `<option value="${g.id}" ${g.id === draft.group ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
+    <div class="field"><span>Photos</span><div class="photos" id="me-photos"></div></div>
     <div class="meta-grid">
       <div><span>Position · IFC (m)</span><b class="mono">X ${fmtM(draft.position.x)} · Y ${fmtM(draft.position.y)} · Z ${fmtM(draft.position.z)}</b></div>
-      <div><span>GPS</span><b class="mono">${draft.gps ? `${fmtLL(draft.gps.lat)}, ${fmtLL(draft.gps.lon)}` : '— (ยังไม่ได้ Set Location)'}</b></div>
-      <div class="span2"><span>BIM element</span><b>${draft.element ? `${esc(draft.element.ifcType)} · ${esc(draft.element.name || '')}` : '— (ไม่ได้ผูกกับ element)'}</b>${draft.element && draft.element.guid ? `<code>${esc(draft.element.guid)}</code>` : ''}</div>
+      <div><span>GPS</span><b class="mono">${draft.gps ? `${fmtLL(draft.gps.lat)}, ${fmtLL(draft.gps.lon)}` : '—'}</b></div>
+      <div class="span2"><span>BIM element</span><b>${draft.element ? `${esc(draft.element.ifcType)} · ${esc(draft.element.name || '')}` : '— (not linked to an element)'}</b>${draft.element && draft.element.guid ? `<code>${esc(draft.element.guid)}</code>` : ''}</div>
       <div><span>Created</span><b>${esc(draft.author || '—')} · ${new Date(draft.createdAt).toLocaleString()}</b></div>
       <div><span>Source</span><b>${esc(draft.source)}</b></div>
     </div>
-    <label class="switch"><input type="checkbox" id="me-lock" ${draft.locked ? 'checked' : ''}><i></i><span>${icon('lock')} ล็อค — กันแก้ไข / ย้าย / ลบ</span></label>
+    <label class="switch"><input type="checkbox" id="me-lock" ${draft.locked ? 'checked' : ''}><i></i><span>${icon('lock')} Lock — prevent edit / move / delete</span></label>
     ${isNew ? '' : `<div class="replies"><div class="rep-head">Replies</div><div id="me-replies"></div>
-      <div class="rep-input"><input id="me-reply" placeholder="ตอบกลับ…"><button class="icon-btn accent" id="me-send">${icon('send')}</button></div></div>`}
+      <div class="rep-input"><input id="me-reply" placeholder="Reply…"><button class="icon-btn accent" id="me-send">${icon('send')}</button></div></div>`}
     <input type="file" id="me-file" accept="image/*" multiple hidden>
   </div>`);
   const renderPhotos = () => {
@@ -577,7 +585,7 @@ function openMarkupEditor(m, isNew, openCamera = false) {
   };
   const renderReplies = () => {
     const el = body.querySelector('#me-replies'); if (!el) return;
-    el.innerHTML = draft.replies.length ? draft.replies.map((r) => `<div class="rep"><b>${esc(r.author)}</b><span>${timeAgo(r.date)}</span><p>${esc(r.text)}</p></div>`).join('') : '<p class="muted small">ยังไม่มีการตอบกลับ</p>';
+    el.innerHTML = draft.replies.length ? draft.replies.map((r) => `<div class="rep"><b>${esc(r.author)}</b><span>${timeAgo(r.date)}</span><p>${esc(r.text)}</p></div>`).join('') : '<p class="muted small">No replies yet</p>';
   };
   renderPhotos(); renderReplies();
   if (lockedAtOpen) body.querySelectorAll('#me-title,#me-text,#me-status,#me-prio,#me-assign').forEach((x) => (x.disabled = true));
@@ -633,8 +641,8 @@ function openMarkupEditor(m, isNew, openCamera = false) {
 }
 
 async function deleteMarkup(m) {
-  if (m.locked) return toast('มาร์คนี้ถูกล็อค — ปลดล็อคก่อนลบ', 'warn');
-  if (!(await confirmBox('Delete markup', `ลบ ${MARKUP_TYPES[m.type].label} #${m.number}?`, 'Delete', true))) return;
+  if (m.locked) return toast('This markup is locked — unlock it before deleting', 'warn');
+  if (!(await confirmBox('Delete markup', `Delete ${MARKUP_TYPES[m.type].label} #${m.number}?`, 'Delete', true))) return;
   app.project.markups = app.project.markups.filter((x) => x.id !== m.id);
   if (app.sel === m.id) app.sel = null;
   save(); refreshMarkers(); renderPanel(); syncToggles();
@@ -700,12 +708,12 @@ function activeGroup() { const P = app.project; return (P.groups || []).find((g)
 function ensureGroup() {
   const P = app.project; P.groups = P.groups || [];
   let g = activeGroup();
-  if (!g) { g = { id: uuid(), name: `กลุ่ม ${P.groups.length + 1}`, createdAt: new Date().toISOString() }; P.groups.push(g); P.app.activeGroup = g.id; save(); }
+  if (!g) { g = { id: uuid(), name: `Group ${P.groups.length + 1}`, createdAt: new Date().toISOString() }; P.groups.push(g); P.app.activeGroup = g.id; save(); }
   updateGroupChip();
   return g;
 }
 function groupName(id) { const g = ((app.project && app.project.groups) || []).find((x) => x.id === id); return g ? g.name : ''; }
-function updateGroupChip() { const g = app.project && activeGroup(); const el = $('#q-group-name'); if (el) el.textContent = g ? g.name : 'ยังไม่มีกลุ่ม'; }
+function updateGroupChip() { const g = app.project && activeGroup(); const el = $('#q-group-name'); if (el) el.textContent = g ? g.name : 'No group'; }
 function groupDialog() {
   const P = app.project; P.groups = P.groups || [];
   const body = h('<div class="proj-list"></div>');
@@ -713,24 +721,24 @@ function groupDialog() {
     body.innerHTML = P.groups.map((g) => {
       const n = P.markups.filter((m) => m.group === g.id).length, on = g.id === P.app.activeGroup;
       return `<div class="proj-item ${on ? 'current' : ''}" data-id="${g.id}"><div class="proj-icon">${icon('layers')}</div>
-        <div class="proj-main"><b>${esc(g.name)}</b><span>${n} รายการ${on ? ' · กลุ่มที่ใช้อยู่ (ภาพ/มาร์คใหม่จะเข้ากลุ่มนี้)' : ' · แตะเพื่อใช้กลุ่มนี้'}</span></div>
-        <button class="icon-btn" data-a="ren" title="เปลี่ยนชื่อ">${icon('edit')}</button><button class="icon-btn" data-a="del" title="ลบกลุ่ม">${icon('trash')}</button></div>`;
-    }).join('') || '<p class="muted">ยังไม่มีกลุ่ม — กด "กลุ่มใหม่"</p>';
+        <div class="proj-main"><b>${esc(g.name)}</b><span>${n} item${n === 1 ? '' : 's'}${on ? ' · active (new captures / marks go here)' : ' · tap to make active'}</span></div>
+        <button class="icon-btn" data-a="ren" title="Rename">${icon('edit')}</button><button class="icon-btn" data-a="del" title="Delete group">${icon('trash')}</button></div>`;
+    }).join('') || '<p class="muted">No groups yet — press "New group"</p>';
   };
   const refresh = () => { save(); updateGroupChip(); render(); refreshMarkers(); renderPanel(); };
   render();
-  modal({ title: 'กลุ่มภาพ / มาร์ค', body, actions: [
-    { label: 'ปิด', onClick: (c) => c() },
-    { label: 'กลุ่มใหม่', icon: 'plus', kind: 'primary', onClick: async () => {
-      const n = await promptBox('กลุ่มใหม่', 'ชื่อกลุ่ม', `กลุ่ม ${P.groups.length + 1}`); if (!n) return;
+  modal({ title: 'Groups', body, actions: [
+    { label: 'Close', onClick: (c) => c() },
+    { label: 'New group', icon: 'plus', kind: 'primary', onClick: async () => {
+      const n = await promptBox('New group', 'Group name', `Group ${P.groups.length + 1}`); if (!n) return;
       const g = { id: uuid(), name: n, createdAt: new Date().toISOString() }; P.groups.push(g); P.app.activeGroup = g.id; refresh();
     } }] });
   body.onclick = async (e) => {
     const it = e.target.closest('.proj-item'); if (!it) return;
     const g = P.groups.find((x) => x.id === it.dataset.id), a = e.target.closest('[data-a]')?.dataset.a;
-    if (a === 'ren') { const n = await promptBox('เปลี่ยนชื่อกลุ่ม', 'ชื่อ', g.name); if (n) { g.name = n; refresh(); } return; }
+    if (a === 'ren') { const n = await promptBox('Rename group', 'Name', g.name); if (n) { g.name = n; refresh(); } return; }
     if (a === 'del') {
-      if (await confirmBox('ลบกลุ่ม', `ลบกลุ่ม "${g.name}"? ภาพและมาร์คในกลุ่มยังอยู่ แค่ไม่มีกลุ่ม`, 'ลบ', true)) {
+      if (await confirmBox('Delete group', `Delete group "${g.name}"? Its captures and marks are kept, just ungrouped.`, 'Delete', true)) {
         P.markups.forEach((m) => { if (m.group === g.id) m.group = null; });
         P.groups = P.groups.filter((x) => x !== g); if (P.app.activeGroup === g.id) P.app.activeGroup = null; refresh();
       }
@@ -750,7 +758,7 @@ function aimPoint() {
 }
 // Capture: save a screenshot of the current 3D view into the active group straight away (no dialog) — like a game screenshot
 async function captureView() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const author = await ensureAuthor(), g = ensureGroup(), a = aimPoint();
   const m = newMarkup(app.project, {
     type: 'capture', author, position: viewer.worldToIfc(a.point), group: g.id, source: 'capture',
@@ -759,10 +767,10 @@ async function captureView() {
   app.project.markups.push(m); app.sel = m.id;
   const s = h('<div class="shutter"></div>'); $('#viewport').appendChild(s); setTimeout(() => s.remove(), 400);
   save(); refreshMarkers(); renderPanel();
-  toast(`แคปภาพ #${m.number} · ${g.name}`, 'ok', 1800);
+  toast(`Captured #${m.number} · ${g.name}`, 'ok', 1800);
 }
 async function markCenter() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const a = aimPoint();
   await createMarkupAt(a.hit || { type: 'plane' }, viewer.worldToIfc(a.point), { type: 'comment' });
 }
@@ -772,7 +780,7 @@ $('#q-group').onclick = groupDialog;
 
 // ================================================================ views
 async function saveView() {
-  const n = await promptBox('Save view', 'ชื่อมุมมอง · View name', `View ${app.project.views.length + 1}`);
+  const n = await promptBox('Save view', 'View name', `View ${app.project.views.length + 1}`);
   if (n === null) return;
   const v = { id: uuid(), name: n || `View ${app.project.views.length + 1}`, createdAt: new Date().toISOString(), locked: false, ...viewer.getViewState(), thumb: viewer.snapshot(360) };
   app.project.views.push(v); save(); openPanel('views');
@@ -801,9 +809,9 @@ function markupsHTML() {
   const P = app.project;
   const sel = P.markups.find((m) => m.id === app.sel);
   const items = P.markups.filter(filterFn()).sort((a, b) => b.number - a.number);
-  const filters = [['all', 'All'], ['open', 'Open'], ['done', 'Done'], ['capture', 'ภาพ'], ['comment', 'Comments'], ['note', 'Notes'], ['issue', 'Issues']];
+  const filters = [['all', 'All'], ['open', 'Open'], ['done', 'Done'], ['capture', 'Captures'], ['comment', 'Comments'], ['note', 'Notes'], ['issue', 'Issues']];
   const gsel = app.mkGroup || 'all';
-  const groupPills = (P.groups && P.groups.length) ? `<div class="filters"><button class="pill ${gsel === 'all' ? 'on' : ''}" data-group="all">ทุกกลุ่ม</button>${P.groups.map((g) => `<button class="pill ${gsel === g.id ? 'on' : ''}" data-group="${g.id}">${esc(g.name)}</button>`).join('')}</div>` : '';
+  const groupPills = (P.groups && P.groups.length) ? `<div class="filters"><button class="pill ${gsel === 'all' ? 'on' : ''}" data-group="all">All groups</button>${P.groups.map((g) => `<button class="pill ${gsel === g.id ? 'on' : ''}" data-group="${g.id}">${esc(g.name)}</button>`).join('')}</div>` : '';
   const detail = sel ? `
     <div class="mk-detail">
       ${sel.photos[0] || sel.snapshot ? `<div class="mk-hero"><img src="${sel.photos[0] || sel.snapshot}" alt="">${sel.photos.length > 1 ? `<span class="badge">+${sel.photos.length - 1}</span>` : ''}</div>` : ''}
@@ -828,7 +836,7 @@ function markupsHTML() {
         <span class="mk-body"><span class="mk-title">${esc(markupTitle(m))}</span>
         <span class="mk-meta">${MARKUP_TYPES[m.type].label} · ${STATUSES[m.status].label} · ${timeAgo(m.createdAt)}</span></span>
         <span class="mk-icons">${m.photos.length ? icon('image', 'sm') : ''}${m.locked ? icon('lock', 'sm') : ''}</span>
-      </button>`).join('') || `<div class="empty-list">${icon('comment')}<p>ยังไม่มีมาร์ค</p><span>Markup → Comment / Note / Issue แล้วแตะบนโมเดล หรือใช้ AR → Mark</span></div>`}</div>`;
+      </button>`).join('') || `<div class="empty-list">${icon('comment')}<p>No markups yet</p><span>Use Capture / Mark, or Markup → Comment / Note / Issue and tap the model</span></div>`}</div>`;
 }
 function viewsHTML() {
   const V = app.project.views;
@@ -840,7 +848,7 @@ function viewsHTML() {
           <button class="icon-btn sm ${v.locked ? 'on' : ''}" data-v="lock" title="${v.locked ? 'Unlock' : 'Lock'}">${icon(v.locked ? 'lock' : 'unlock')}</button>
           <button class="icon-btn sm" data-v="ren" title="Rename" ${v.locked ? 'disabled' : ''}>${icon('edit')}</button>
           <button class="icon-btn sm" data-v="del" title="Delete" ${v.locked ? 'disabled' : ''}>${icon('trash')}</button></div>
-      </div>`).join('') || `<div class="empty-list">${icon('views')}<p>ยังไม่มีมุมมองที่บันทึก</p><span>View → Save View</span></div>`}</div>`;
+      </div>`).join('') || `<div class="empty-list">${icon('views')}<p>No saved views yet</p><span>View → Save View</span></div>`}</div>`;
 }
 function infoHTML() {
   const P = app.project, a = P.geo.anchor, s = app.elSel;
@@ -859,21 +867,21 @@ function infoHTML() {
         <button class="icon-btn sm" data-m="vis" title="Show/hide">${icon(m.visible === false ? 'eyeoff' : 'xray')}</button>
         <div><b>${esc(m.name)}</b><span>${(m.format || '').toUpperCase()}${m.info && m.info.schema ? ` · ${m.info.schema}` : ''}${m.info && m.info.elements ? ` · ${m.info.elements} elements` : ''}${m.missing ? ' · file missing' : ''}</span></div>
         <button class="icon-btn sm" data-m="del" title="Remove">${icon('trash')}</button>
-      </div>`).join('') || '<p class="muted small">ยังไม่มีโมเดล</p>'}
+      </div>`).join('') || '<p class="muted small">No models yet</p>'}
       <button class="btn sm" data-m="add">${icon('plus')}<span>Add model</span></button></section>
     ${LOCATION_FEATURES ? `<section><h4>Site location</h4>
       ${a ? `<div class="kv"><span>Anchor (IFC)</span><b class="mono">${fmtM(a.position.x, 2)}, ${fmtM(a.position.y, 2)}, ${fmtM(a.position.z, 2)}</b></div>
         <div class="kv"><span>GPS</span><b class="mono">${fmtLL(a.lat)}, ${fmtLL(a.lon)}</b></div>
         <div class="kv"><span>Project north</span><b class="mono">${a.bearing.toFixed(2)}° from true north</b></div>
         <div class="kv"><span>Method</span><b>${esc(a.method)}${a.accuracy ? ` · ±${a.accuracy.toFixed(1)} m` : ''}</b></div>`
-      : '<p class="muted small">ยังไม่ได้ตั้งตำแหน่ง — Site → Set Location (มาร์คแค่จุดเดียว)</p>'}
+      : '<p class="muted small">No location yet — Site → Set Location (one point)</p>'}
       <button class="btn sm" data-g="anchor">${icon('anchor')}<span>${a ? 'Re-set location' : 'Set location'}</span></button>
     </section>
     <section><h4>QR control points</h4>
       ${P.geo.controlPoints.map((c) => `<div class="model-row" data-cp="${c.id}">
         <span class="cp-ic">${icon('qr')}</span><div><b>${esc(c.name)}</b><span class="mono">${fmtM(c.position.x, 3)}, ${fmtM(c.position.y, 3)}, ${fmtM(c.position.z, 3)}</span></div>
         <button class="icon-btn sm" data-c="show" title="QR">${icon('print')}</button>
-        <button class="icon-btn sm" data-c="del" title="Delete">${icon('trash')}</button></div>`).join('') || '<p class="muted small">ยังไม่มีจุด QR</p>'}
+        <button class="icon-btn sm" data-c="del" title="Delete">${icon('trash')}</button></div>`).join('') || '<p class="muted small">No QR points yet</p>'}
       <button class="btn sm" data-g="cp">${icon('qr')}<span>Create QR point</span></button>
     </section>` : ''}
     <section><h4>Project</h4>
@@ -903,7 +911,7 @@ $('#panel-body').onclick = async (e) => {
     if (act === 'go') { viewer.setViewState(view); syncModeUI(); return; }
     if (act === 'lock') { view.locked = !view.locked; save(); return renderPanel(); }
     if (act === 'ren') { const n = await promptBox('Rename view', 'Name', view.name); if (n) { view.name = n; save(); renderPanel(); } return; }
-    if (act === 'del') { if (await confirmBox('Delete view', `ลบมุมมอง "${view.name}"?`, 'Delete', true)) { app.project.views = app.project.views.filter((x) => x !== view); save(); renderPanel(); } return; }
+    if (act === 'del') { if (await confirmBox('Delete view', `Delete view "${view.name}"?`, 'Delete', true)) { app.project.views = app.project.views.filter((x) => x !== view); save(); renderPanel(); } return; }
   }
   const md = t.closest('[data-m]');
   if (md) {
@@ -912,7 +920,7 @@ $('#panel-body').onclick = async (e) => {
     const id = md.closest('.model-row').dataset.id; const rec = app.project.models.find((x) => x.id === id);
     if (act === 'vis') { rec.visible = rec.visible === false; viewer.setModelVisible(id, rec.visible); save(); return renderPanel(); }
     if (act === 'del') {
-      if (!(await confirmBox('Remove model', `เอา "${rec.name}" ออกจากโปรเจกต์? (มาร์คยังอยู่)`, 'Remove', true))) return;
+      if (!(await confirmBox('Remove model', `Remove "${rec.name}" from the project? Markups are kept.`, 'Remove', true))) return;
       viewer.removeModel(id); app._cols = null; await store.deleteFile(rec.fileId);
       app.project.models = app.project.models.filter((x) => x !== rec); save(); updateEmptyState(); return renderPanel();
     }
@@ -923,7 +931,7 @@ $('#panel-body').onclick = async (e) => {
   if (c) {
     const cp = app.project.geo.controlPoints.find((x) => x.id === c.closest('[data-cp]').dataset.cp);
     if (c.dataset.c === 'show') return showCPSheet(cp);
-    if (await confirmBox('Delete control point', `ลบจุด ${cp.name}?`, 'Delete', true)) { app.project.geo.controlPoints = app.project.geo.controlPoints.filter((x) => x !== cp); save(); renderBadges(); renderPanel(); }
+    if (await confirmBox('Delete control point', `Delete point ${cp.name}?`, 'Delete', true)) { app.project.geo.controlPoints = app.project.geo.controlPoints.filter((x) => x !== cp); save(); renderBadges(); renderPanel(); }
   }
   const cp = t.closest('[data-copy]'); if (cp) { navigator.clipboard?.writeText(cp.dataset.copy); toast('Copied GUID', 'ok'); }
 };
@@ -998,7 +1006,7 @@ async function toggleGPS() {
     try { await orient.requestPermission(); orient.start(); } catch (e) { /* compass optional */ }
     gps.start();
     app.project.tracks.push({ id: uuid(), startedAt: new Date().toISOString(), endedAt: null, points: [] });
-    if (!app.project.geo.anchor && !app.loc.fix) toast('ยังไม่ได้ตั้งตำแหน่ง — ใช้ Site → Set Location หรือ Scan QR ก่อน', 'warn', 5000);
+    if (!app.project.geo.anchor && !app.loc.fix) toast('No location yet — use Site → Set Location or Scan QR first', 'warn', 5000);
   }
   syncToggles(); updateStatus();
 }
@@ -1017,7 +1025,7 @@ function linkFixToGps() {
     renderBadges(); save();
   }
   f.linked = true; f.t = g.t;
-  toast('GPS ผูกกับจุด I\'m Here แล้ว — เดินแล้วตำแหน่งจะขยับตาม', 'ok', 3500);
+  toast('GPS linked to your I\'m Here point — your position now follows as you walk', 'ok', 3500);
 }
 // Hybrid tracking: steps move you smoothly; each good GPS reading gently pulls the position back toward GPS,
 // so step drift can never grow without limit (and GPS jitter is averaged out instead of shown directly).
@@ -1075,7 +1083,7 @@ function recordTrack() {
 }
 function renderTrack() {
   const P = app.project;
-  if (!LOCATION_FEATURES) { // GPS path shelved: draw the ACTIVE GROUP as a line through its captures / marks, in order ("ต่อกัน")
+  if (!LOCATION_FEATURES) { // GPS path shelved: draw the ACTIVE GROUP as a line through its captures / marks, in order ("connected")
     const g = activeGroup();
     const pts = g ? P.markups.filter((m) => m.group === g.id).sort((a, b) => a.number - b.number).map((m) => ifcToRaw(m.position)) : [];
     viewer.setTrack(pts, settings.showMarkups);
@@ -1086,16 +1094,16 @@ function renderTrack() {
 }
 function renderBadges() {
   const P = app.project, items = [];
-  if (P.geo.anchor) items.push({ raw: ifcToRaw(P.geo.anchor.position), label: 'A', color: '#7c5cff', kind: 'anchor' });
-  for (const c of P.geo.controlPoints) items.push({ raw: ifcToRaw(c.position), label: 'QR', color: '#3ddc97', kind: 'cp', id: c.id });
-  if (P.geo.face) items.push({ raw: ifcToRaw(P.geo.face), label: 'F', color: '#ffc145', kind: 'face' });
+  if (P.geo.anchor) items.push({ raw: ifcToRaw(P.geo.anchor.position), label: 'A', color: '#60a5fa', kind: 'anchor' });
+  for (const c of P.geo.controlPoints) items.push({ raw: ifcToRaw(c.position), label: 'QR', color: '#7aa7e8', kind: 'cp', id: c.id });
+  if (P.geo.face) items.push({ raw: ifcToRaw(P.geo.face), label: 'F', color: '#9cc2f5', kind: 'face' });
   viewer.setBadges(items);
 }
 
 function suggestSiteAnchor(info) {
   const s = info.site;
-  modal({ title: 'พบพิกัดในไฟล์ IFC', body: `<p>ไฟล์ IFC มีตำแหน่ง Site: <b class="mono">${fmtLL(s.lat)}, ${fmtLL(s.lon)}</b>${Number.isFinite(info.trueNorthBearing) ? ` และ True North <b class="mono">${info.trueNorthBearing.toFixed(2)}°</b>` : ''}.</p>
-    <p class="muted">ใช้เป็นตำแหน่งเริ่มต้นได้ทันที (จุด 0,0,0 ของโมเดล) ความแม่นยำขึ้นกับการตั้ง Survey Point / Project Base Point ใน Revit — แนะนำให้ Set Location หรือ Scan QR หน้างานเพื่อความแม่นยำ</p>`,
+  modal({ title: 'Location found in the IFC file', body: `<p>The IFC file contains a site location: <b class="mono">${fmtLL(s.lat)}, ${fmtLL(s.lon)}</b>${Number.isFinite(info.trueNorthBearing) ? ` and True North <b class="mono">${info.trueNorthBearing.toFixed(2)}°</b>` : ''}.</p>
+    <p class="muted">It can be used as the starting location (model origin 0,0,0). Accuracy depends on the Survey Point / Project Base Point setup in Revit — for precision use Set Location or Scan QR on site.</p>`,
   actions: [{ label: 'Later', onClick: (c) => c() }, { label: 'Use IFC location', kind: 'primary', icon: 'anchor', onClick: (c) => {
     app.project.geo.anchor = { position: { x: 0, y: 0, z: s.elevation ? 0 : 0 }, lat: s.lat, lon: s.lon, alt: s.elevation, bearing: info.trueNorthBearing ?? 0, method: 'ifc-site', accuracy: null, createdAt: new Date().toISOString() };
     app.loc.corr = { x: 0, y: 0 }; save(); renderBadges(); computeLoc(); renderPanel(); c(); toast('Location set from IFC site', 'ok');
@@ -1104,20 +1112,20 @@ function suggestSiteAnchor(info) {
 
 // ---------------- anchor wizard (ONE point)
 function anchorWizard() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const site = app.project.models.map((m) => m.info && m.info.site).find(Boolean);
-  modal({ title: 'Set Location · ตั้งตำแหน่งจุดเดียว', wide: false, body: `
+  modal({ title: 'Set Location · one point', wide: false, body: `
     <ol class="steps">
-      <li><b>ยืนที่จุดที่ระบุได้ชัดในแบบ</b><span>เช่น มุมเสา, จุดตัดกริด, มุมผนัง หรือจุดที่เซอร์เวย์ยิงไว้</span></li>
-      <li><b>แตะจุดเดียวกันบนโมเดล/แปลน</b><span>แนะนำใช้โหมด Plan เพื่อแตะได้แม่น</span></li>
-      <li><b>จับพิกัด GPS</b><span>ระบบเฉลี่ยค่าหลายวินาทีให้แม่นขึ้น · ปรับทิศเพิ่มได้ด้วย “2nd Point” หรือสแกน QR</span></li>
+      <li><b>Stand on a point you can identify on the drawings</b><span>e.g. a column corner, grid intersection, wall corner or a surveyed point</span></li>
+      <li><b>Tap the same point on the model / plan</b><span>Plan view is the most precise</span></li>
+      <li><b>Capture GPS</b><span>Readings are averaged over several seconds · refine the heading with “2nd Point” or a QR scan</span></li>
     </ol>`,
   actions: [
     ...(site ? [{ label: 'Use IFC site', icon: 'sample', left: true, onClick: (c) => { c(); suggestSiteAnchor(app.project.models.find((m) => m.info && m.info.site).info); } }] : []),
     { label: 'Cancel', onClick: (c) => c() },
     { label: 'Tap point on model', icon: 'target', kind: 'primary', onClick: (c) => {
       c(); goPlanForPicking();
-      setTool('anchor'); hint('แตะจุดที่คุณยืนอยู่บนโมเดล / แปลน', cancelTool);
+      setTool('anchor'); hint('Tap where you are standing on the model / plan', cancelTool);
     } }] });
 }
 function anchorStep2(ifc) {
@@ -1125,7 +1133,7 @@ function anchorStep2(ifc) {
   const bearing0 = getBearing();
   const body = h(`<div>
     <div class="kv"><span>Model point (IFC)</span><b class="mono">${fmtM(ifc.x)}, ${fmtM(ifc.y)}, ${fmtM(ifc.z)}</b></div>
-    <div class="gps-box"><div class="gps-read" id="aw-read">${icon('gps')}<span>ยังไม่ได้จับพิกัด</span></div>
+    <div class="gps-box"><div class="gps-read" id="aw-read">${icon('gps')}<span>No GPS fix yet</span></div>
       <button class="btn primary" id="aw-cap">${icon('gps')}<span>Capture GPS (${settings.gpsAvg}s)</span></button></div>
     <div class="field-row">
       <label class="field"><span>Latitude</span><input id="aw-lat" inputmode="decimal" value="${old ? old.lat.toFixed(8) : ''}" placeholder="13.7563"></label>
@@ -1135,14 +1143,14 @@ function anchorStep2(ifc) {
       <label class="field"><span>Project north (° from true north)</span><input id="aw-bear" inputmode="decimal" value="${bearing0.toFixed(2)}"></label>
       <button class="btn" id="aw-compass" style="align-self:end">${icon('compass')}<span>From compass</span></button>
     </div>
-    <p class="muted small">From compass: หันขอบบนของเครื่องไปตามแกน +Y ของโมเดล (Project North / แนวกริดแนวตั้งในแปลน) แล้วกด · พิมพ์ lat/lon เองได้ (เช่น จาก Google Maps) สำหรับใช้บน PC</p>
+    <p class="muted small">From compass: point the top of the device along the model +Y axis (project north / vertical grid lines on the plan) and press · on a PC you can type lat/lon (e.g. from Google Maps)</p>
   </div>`);
   let acc = null;
   body.querySelector('#aw-cap').onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true;
     const read = body.querySelector('#aw-read span');
     try {
-      const r = await gps.average(settings.gpsAvg, (n, l) => { read.textContent = `กำลังเฉลี่ย… ${n} ค่า · ±${l.acc.toFixed(1)} m`; });
+      const r = await gps.average(settings.gpsAvg, (n, l) => { read.textContent = `Averaging… ${n} readings · ±${l.acc.toFixed(1)} m`; });
       body.querySelector('#aw-lat').value = r.lat.toFixed(8); body.querySelector('#aw-lon').value = r.lon.toFixed(8);
       acc = r.acc; read.textContent = `${r.n} samples · best ±${r.acc.toFixed(1)} m`;
     } catch (err) { read.textContent = err.message; toast(err.message, 'error'); }
@@ -1151,7 +1159,7 @@ function anchorStep2(ifc) {
   body.querySelector('#aw-compass').onclick = async () => {
     try { await orient.requestPermission(); orient.start(); } catch (e) { return toast(e.message, 'error'); }
     setTimeout(() => {
-      if (!orient.ready || !orient.hasTrueNorth) return toast('ไม่มีเข็มทิศในอุปกรณ์นี้', 'warn');
+      if (!orient.ready || !orient.hasTrueNorth) return toast('This device has no compass', 'warn');
       body.querySelector('#aw-bear').value = orient.getHeading().toFixed(1);
     }, 400);
   };
@@ -1160,30 +1168,30 @@ function anchorStep2(ifc) {
     { label: 'Save location', icon: 'check', kind: 'primary', onClick: (c) => {
       const lat = parseFloat(body.querySelector('#aw-lat').value), lon = parseFloat(body.querySelector('#aw-lon').value);
       const bearing = normDeg(parseFloat(body.querySelector('#aw-bear').value) || 0);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return toast('ต้องมี Latitude / Longitude', 'warn');
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return toast('Latitude and longitude are required', 'warn');
       app.project.geo.anchor = { position: ifc, lat, lon, alt: null, bearing, method: acc != null ? 'gps' : 'manual', accuracy: acc, createdAt: new Date().toISOString() };
       app.loc.corr = { x: 0, y: 0 }; app.loc.fixZ = ifc.z;
       save(); renderBadges(); computeLoc(); renderPanel(); c();
-      toast('Location saved — เปิด Locate Me เพื่อดูตำแหน่งบนแบบ', 'ok', 4000);
+      toast('Location saved — turn on Locate Me to see your position on the plan', 'ok', 4000);
     } }] });
 }
 
 // ---------------- 2-point heading refinement
 function twoPointWizard() {
-  if (!app.project.geo.anchor) return toast('ต้อง Set Location ก่อน', 'warn');
-  modal({ title: 'Refine heading · จุดที่ 2', body: `<p>เดินไปอีกจุดที่ระบุได้ในแบบ ห่างจากจุดแรก <b>อย่างน้อย 15–30 m</b> แล้วแตะจุดนั้นบนโมเดล ระบบจะคำนวณทิศ Project North จาก GPS ทั้งสองจุด (แม่นกว่าเข็มทิศมือถือ)</p>`,
-    actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Tap 2nd point', icon: 'target', kind: 'primary', onClick: (c) => { c(); setTool('second'); hint('แตะจุดที่ 2 ที่คุณยืนอยู่บนโมเดล', cancelTool); } }] });
+  if (!app.project.geo.anchor) return toast('Set Location first', 'warn');
+  modal({ title: 'Refine heading · second point', body: `<p>Walk to another identifiable point <b>at least 15–30 m</b> from the first one and tap it on the model. Project north is computed from the two GPS points (more accurate than the phone compass).</p>`,
+    actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Tap 2nd point', icon: 'target', kind: 'primary', onClick: (c) => { c(); setTool('second'); hint('Tap the second point where you are standing', cancelTool); } }] });
 }
 function twoPointStep2(ifc) {
   const a = app.project.geo.anchor;
-  const body = h(`<div><div class="gps-box"><div class="gps-read" id="tp-read">${icon('gps')}<span>ยืนนิ่งที่จุดที่ 2 แล้วกด Capture</span></div>
+  const body = h(`<div><div class="gps-box"><div class="gps-read" id="tp-read">${icon('gps')}<span>Stand still on the second point and press Capture</span></div>
     <button class="btn primary" id="tp-cap">${icon('gps')}<span>Capture GPS (${settings.gpsAvg}s)</span></button></div><div id="tp-res"></div></div>`);
   let newB = null;
   body.querySelector('#tp-cap').onclick = async (e) => {
     e.currentTarget.disabled = true;
     const read = body.querySelector('#tp-read span');
     try {
-      const r = await gps.average(settings.gpsAvg, (n, l) => { read.textContent = `กำลังเฉลี่ย… ${n} · ±${l.acc.toFixed(1)} m`; });
+      const r = await gps.average(settings.gpsAvg, (n, l) => { read.textContent = `Averaging… ${n} · ±${l.acc.toFixed(1)} m`; });
       const dM = { x: ifc.x - a.position.x, y: ifc.y - a.position.y };
       const dEN = gpsToEN(r.lat, r.lon, a.lat, a.lon);
       const dist = Math.hypot(dM.x, dM.y), gdist = Math.hypot(dEN.e, dEN.n);
@@ -1191,12 +1199,12 @@ function twoPointStep2(ifc) {
       read.textContent = `±${r.acc.toFixed(1)} m`;
       body.querySelector('#tp-res').innerHTML = `<div class="kv"><span>Distance model / GPS</span><b class="mono">${dist.toFixed(1)} m / ${gdist.toFixed(1)} m</b></div>
         <div class="kv"><span>Heading old → new</span><b class="mono">${a.bearing.toFixed(2)}° → ${newB.toFixed(2)}°</b></div>
-        ${dist < 10 ? '<p class="warn-text">ระยะห่างน้อยกว่า 10 m — ผลอาจคลาดเคลื่อนมาก</p>' : ''}`;
+        ${dist < 10 ? '<p class="warn-text">Less than 10 m apart — the result may be inaccurate</p>' : ''}`;
     } catch (err) { read.textContent = err.message; }
     e.currentTarget.disabled = false;
   };
   modal({ title: 'Refine heading · Step 2', body, actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Apply', kind: 'primary', icon: 'check', onClick: (c) => {
-    if (newB == null) return toast('Capture GPS ก่อน', 'warn');
+    if (newB == null) return toast('Capture GPS first', 'warn');
     a.bearing = newB; a.method += '+2pt'; save(); computeLoc(); renderPanel(); c(); toast(`Project north = ${newB.toFixed(2)}°`, 'ok');
   } }] });
 }
@@ -1205,7 +1213,7 @@ function twoPointStep2(ifc) {
 async function compassDialog() {
   try { await orient.requestPermission(); orient.start(); } catch (e) { return toast(e.message, 'error'); }
   const body = h(`<div class="compass-dlg"><div class="cdial"><div class="cneedle" id="cd-n"></div><b id="cd-v">—</b></div>
-    <p class="muted small" id="cd-s"></p><p class="muted small">หากค่าเพี้ยน ให้หมุนเครื่องเป็นเลข 8 เพื่อคาลิเบรต และอยู่ห่างโครงเหล็ก / รถ</p></div>`);
+    <p class="muted small" id="cd-s"></p><p class="muted small">If readings drift, move the device in a figure 8 to calibrate and keep away from steel and vehicles</p></div>`);
   const upd = () => {
     const hd = orient.getHeading();
     body.querySelector('#cd-v').textContent = hd == null ? '—' : `${hd.toFixed(0)}°`;
@@ -1218,9 +1226,9 @@ async function compassDialog() {
 
 // ---------------- QR control points
 function startCPCreate() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   goPlanForPicking();
-  setTool('cp'); hint('แตะจุดบนแบบที่จะให้เซอร์เวย์ยิงหมุด QR (แก้พิกัดละเอียดได้ในขั้นต่อไป)', cancelTool);
+  setTool('cp'); hint('Tap where the surveyor should set out the QR (fine-tune the coordinates next)', cancelTool);
 }
 function cpDialog(ifc) {
   const n = app.project.geo.controlPoints.length + 1;
@@ -1231,16 +1239,16 @@ function cpDialog(ifc) {
       <label class="field"><span>Y (m)</span><input id="cp-y" inputmode="decimal" value="${ifc.y.toFixed(3)}"></label>
       <label class="field"><span>Z (m)</span><input id="cp-z" inputmode="decimal" value="${ifc.z.toFixed(3)}"></label>
     </div>
-    <p class="muted small">พิกัดเป็นระบบเดียวกับไฟล์ IFC (export จาก Revit) · ปัดให้ตรงพิกัดที่เซอร์เวย์จะยิงได้ · X/Y/Z = <b>กึ่งกลาง QR</b></p>
+    <p class="muted small">Same coordinate system as the IFC export from Revit · round to what the surveyor will set out · X/Y/Z = <b>centre of the QR</b></p>
     <div class="field-row">
-      <label class="field"><span>ติดตั้งแบบไหน</span><select id="cp-m"><option value="floor">วางบนพื้น</option><option value="wall">ติดผนัง (ตั้งตรง)</option></select></label>
-      <label class="field"><span>ทิศ (°) 0=+Y · 90=+X</span><input id="cp-h" inputmode="decimal" value="0"></label>
-      <label class="field"><span>ขนาด QR จริง (cm)</span><input id="cp-s" inputmode="decimal" value="${Math.round(settings.qrSize * 100)}"></label>
+      <label class="field"><span>Mounting</span><select id="cp-m"><option value="floor">On the floor</option><option value="wall">On a wall (upright)</option></select></label>
+      <label class="field"><span>Direction (°) 0=+Y · 90=+X</span><input id="cp-h" inputmode="decimal" value="0"></label>
+      <label class="field"><span>Printed QR size (cm)</span><input id="cp-s" inputmode="decimal" value="${Math.round(settings.qrSize * 100)}"></label>
     </div>
-    <p class="muted small">ใช้ให้แอปคำนวณ <b>ตำแหน่ง+ทิศของกล้อง</b> จากภาพ QR: พื้น → ทิศ = ด้านบนของ QR ชี้ไปทางไหน · ผนัง → ทิศ = หน้า QR หันไปทางไหน · แนะนำ QR 20 cm เล็งห่างไม่เกิน ~2 m · พิมพ์ที่ 100% แล้ววัดขนาดจริงใส่ให้ตรง (ขนาดผิด = ระยะผิดตามสัดส่วน)</p></div>`);
+    <p class="muted small">Lets the app compute the <b>camera position + heading</b> from the QR image: floor → where the top of the QR points · wall → where the QR faces · 20 cm QR recommended, view from ≤ ~2 m · print at 100% and enter the measured size (a wrong size scales the distance)</p></div>`);
   modal({ title: 'Create QR control point', body, actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Create QR', icon: 'qr', kind: 'primary', onClick: (c) => {
     const p = { x: parseFloat(body.querySelector('#cp-x').value), y: parseFloat(body.querySelector('#cp-y').value), z: parseFloat(body.querySelector('#cp-z').value) };
-    if (![p.x, p.y, p.z].every(Number.isFinite)) return toast('พิกัดไม่ถูกต้อง', 'warn');
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return toast('Invalid coordinates', 'warn');
     const size = Math.min(0.19, Math.max(0.05, (parseFloat(body.querySelector('#cp-s').value) || 15) / 100)); // A4 sheet limits the symbol to 19 cm
     const cp = { id: uuid(), name: body.querySelector('#cp-n').value.trim() || `CP-${n}`, position: p, createdAt: new Date().toISOString(),
       mount: body.querySelector('#cp-m').value, heading: normDeg(parseFloat(body.querySelector('#cp-h').value) || 0), size };
@@ -1259,10 +1267,10 @@ async function showCPSheet(cp) {
 }
 async function scanQR() {
   const body = h(`<div class="scan"><video playsinline muted></video><div class="scan-frame"></div>
-    <p class="muted small" id="sq-msg">เล็งกล้องไปที่ QR control point — หรือใช้ปุ่มด้านล่างถ้าไม่มี QR ตรงหน้า</p>
+    <p class="muted small" id="sq-msg">Point the camera at a QR control point — or use the buttons below</p>
     <div class="scan-alt">
-      <button class="btn sm" id="sq-img">${icon('image')}<span>เลือกรูป QR</span></button>
-      <button class="btn sm" id="sq-list">${icon('qr')}<span>เลือกจุดจากรายการ</span></button>
+      <button class="btn sm" id="sq-img">${icon('image')}<span>Choose QR image</span></button>
+      <button class="btn sm" id="sq-list">${icon('qr')}<span>Pick from list</span></button>
     </div>
     <input type="file" id="sq-file" accept="image/*" hidden></div>`);
   let stop = null;
@@ -1270,30 +1278,30 @@ async function scanQR() {
   const done = (cp) => { if (stop) { stop(); stop = null; } md.close(); applyCPFix(cp); };
   const noCamera = (why) => { // camera unavailable → keep the dialog, offer the other two ways
     body.querySelector('video').hidden = true; body.querySelector('.scan-frame').hidden = true;
-    body.querySelector('#sq-msg').textContent = `เปิดกล้องไม่ได้ (${why}) — เลือกรูป QR หรือเลือกจุดจากรายการแทน`;
+    body.querySelector('#sq-msg').textContent = `Camera unavailable (${why}) — choose a QR image or pick a point from the list`;
   };
   // 1) pick an image of the QR (gallery / file / screenshot)
   body.querySelector('#sq-img').onclick = () => body.querySelector('#sq-file').click();
   body.querySelector('#sq-file').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
-    body.querySelector('#sq-msg').textContent = 'กำลังอ่าน QR จากรูป…';
+    body.querySelector('#sq-msg').textContent = 'Reading the QR image…';
     try {
       const text = await decodeImageFile(f);
       const cp = text && decodeCP(text);
       if (cp) return done(cp);
-      body.querySelector('#sq-msg').textContent = text ? 'รูปนี้เป็น QR แต่ไม่ใช่ของ SiteAR' : 'อ่าน QR จากรูปไม่ได้ — ลองรูปที่ชัดและเห็น QR เต็มกรอบ';
-    } catch (err) { body.querySelector('#sq-msg').textContent = 'เปิดรูปไม่ได้'; }
+      body.querySelector('#sq-msg').textContent = text ? 'This QR is not a SiteAR control point' : 'No QR found — use a sharp image with the whole QR visible';
+    } catch (err) { body.querySelector('#sq-msg').textContent = 'Cannot open the image'; }
   };
   // 2) choose a control point from the project list (no QR needed)
   body.querySelector('#sq-list').onclick = () => {
     const list = app.project.geo.controlPoints;
-    if (!list.length) return toast('ยังไม่มีจุด QR ในโปรเจกต์ — สร้างที่ Site → Create QR', 'warn', 4000);
+    if (!list.length) return toast('No QR points in this project — create one with Site → Create QR', 'warn', 4000);
     if (stop) { stop(); stop = null; }
     md.close();
     const pb = h(`<div class="proj-list">${list.map((c) => `<div class="proj-item" data-id="${c.id}"><div class="proj-icon">${icon('qr')}</div>
       <div class="proj-main"><b>${esc(c.name)}</b><span class="mono">${fmtM(c.position.x, 2)}, ${fmtM(c.position.y, 2)}, ${fmtM(c.position.z, 2)}</span></div></div>`).join('')}</div>`);
-    const pm = modal({ title: 'ฉันอยู่ที่จุดไหน?', body: pb });
+    const pm = modal({ title: 'Where are you?', body: pb });
     pb.onclick = (e) => {
       const it = e.target.closest('.proj-item'); if (!it) return;
       const c = list.find((x) => x.id === it.dataset.id); pm.close();
@@ -1302,14 +1310,14 @@ async function scanQR() {
   };
   try {
     stop = await startScan(body.querySelector('video'), (text) => { const cp = decodeCP(text); if (cp) done(cp); });
-  } catch (e) { noCamera(e.name === 'NotAllowedError' ? 'ไม่ได้อนุญาตกล้อง' : e.message); }
+  } catch (e) { noCamera(e.name === 'NotAllowedError' ? 'camera permission denied' : e.message); }
 }
 // ---------------- self-marking: "I'm here" — tap where you stand (e.g. beside a column). No survey needed.
 function startSelfMark() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   goPlanForPicking();
   setTool('self');
-  hint("แตะจุดที่คุณยืนอยู่บนแบบ — แตะที่เสาจะ snap กลางเสา", cancelTool);
+  hint("Tap where you stand on the plan — a column snaps to its centre", cancelTool);
 }
 // cached world boxes of every IFC column: [{modelId, eid, box}]
 function columnBoxes() {
@@ -1324,7 +1332,7 @@ function columnBoxes() {
   return app._cols;
 }
 async function selfMarkAt(hit, ifc) {
-  let pos = { ...ifc }, label = 'ตำแหน่งที่แตะ';
+  let pos = { ...ifc }, label = 'tapped point';
   // snap to the nearest column (within 0.75 m on plan) whose height spans the tapped level
   const w = hit.point, SNAP = 0.75;
   let best = null, bestD = SNAP;
@@ -1338,7 +1346,7 @@ async function selfMarkAt(hit, ifc) {
     const b = best.box;
     pos = viewer.worldToIfc(new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2));
     const info = await getIfcElementInfo(viewer.getModel(best.modelId), best.eid).catch(() => null);
-    label = `เสา ${info ? (info.tag || info.name) : ''}`.trim();
+    label = `column ${info ? (info.tag || info.name) : ''}`.trim();
     viewer.highlightElement(best.modelId, best.eid);
     setTimeout(() => viewer.clearHighlight(), 1500);
   } else if (viewer.clipOn) {
@@ -1364,10 +1372,10 @@ function headingModelNow() { // model heading (deg clockwise from +Y): phone if 
   return app.wm ? app.wm.heading : null;
 }
 async function startWalkMark() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   if (ar.active) ar.stop();
   try { await orient.requestPermission(); orient.start(); } // inside the button tap: iOS needs the gesture
-  catch (e) { toast('ไม่ได้อนุญาตเซนเซอร์ — ใช้ปุ่ม ⟲ ⟳ หมุนทิศเองได้', 'warn', 4500); }
+  catch (e) { toast('Sensor permission denied — use the ⟲ ⟳ buttons to turn', 'warn', 4500); }
   app.wm = { state: 'pos', heading: (app.wm && app.wm.heading) || 0, ahead: 0,
     prev: { mode: viewer.mode, clip: viewer.clipOn, panel: document.body.classList.contains('panel-open') } };
   document.body.classList.add('wm'); document.body.classList.remove('panel-open');
@@ -1383,9 +1391,9 @@ function wmState(s) {
   const wm = app.wm; if (!wm) return;
   wm.state = s;
   const msg = $('#wm-msg');
-  if (s === 'pos') { setTool('wmpos'); msg.innerHTML = '<b>1/2</b> แตะจุดที่คุณ<b>ยืนอยู่</b>บนแบบ (แตะที่เสาจะ snap กลางเสา)'; }
-  else if (s === 'face') { setTool('wmface'); msg.innerHTML = '<b>2/2</b> ถือมือถือหันไปทางเดียวกับที่คุณหันหน้า แล้วแตะจุดบนแบบที่คุณ<b>กำลังมองไปหา</b> (เช่น เสาต้นข้างหน้า)'; }
-  else { setTool('select'); msg.innerHTML = 'เดินได้เลย — จุดสีฟ้าขยับตามก้าว (กดค้าง <b>▲ เดิน</b> ถ้านับพลาด) · กด <b>มาร์คตรงนี้</b> เพื่อปักหมุดที่ยืน · ถึงเสาให้กด <b>ตั้งตำแหน่งใหม่</b> เพื่อรีเซ็ต'; }
+  if (s === 'pos') { setTool('wmpos'); msg.innerHTML = '<b>1/2</b> Tap where you are <b>standing</b> on the plan (a column snaps to its centre)'; }
+  else if (s === 'face') { setTool('wmface'); msg.innerHTML = '<b>2/2</b> Hold the phone the way you face, then tap the point you are <b>looking at</b> (e.g. the next column)'; }
+  else { setTool('select'); msg.innerHTML = 'Walk — the blue dot follows your steps (hold <b>▲ Step</b> if one is missed) · press <b>Mark here</b> to drop a pin · at a column press <b>Reset position</b>'; }
   $('#wm-mark').disabled = s !== 'walk';
   syncModeUI();
 }
@@ -1393,7 +1401,7 @@ async function wmSetFacing(ifc) {
   const f = app.loc.fix;
   if (!f) return wmState('pos');
   const dx = ifc.x - f.position.x, dy = ifc.y - f.position.y;
-  if (Math.hypot(dx, dy) < 0.5) { toast('จุดใกล้ตัวเกินไป — แตะจุดที่ห่างออกไปข้างหน้า ≥ 1 m', 'warn'); return wmState('face'); }
+  if (Math.hypot(dx, dy) < 0.5) { toast('Too close — tap a point at least 1 m ahead', 'warn'); return wmState('face'); }
   const hm = normDeg((Math.atan2(dx, dy) * 180) / Math.PI);
   app.wm.heading = hm; viewer.headingTrim = 0;
   if (orient.ready) orient.setHeadingNow(normDeg(hm + getBearing())); // phone heading := this direction (compass not needed)
@@ -1408,7 +1416,7 @@ function nudgeHeading(d) { // d>0 = clockwise
 }
 async function wmMark() {
   const f = app.loc.fix;
-  if (!f || !app.wm) return toast('ตั้งตำแหน่งก่อน', 'warn');
+  if (!f || !app.wm) return toast('Set your position first', 'warn');
   const pos = { ...f.position }, d = app.wm.ahead, h = headingModelNow();
   if (d > 0 && h != null) { const r = (h * Math.PI) / 180; pos.x += Math.sin(r) * d; pos.y += Math.cos(r) * d; }
   await createMarkupAt({ type: 'plane' }, pos, { type: 'comment', source: 'walkmark' });
@@ -1436,15 +1444,15 @@ $('#wm-ahead').onclick = (e) => {
 
 // ---------------- Face Point: "I'm looking at THIS point of the plan" → locks the view direction without a compass
 function startFacePoint() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   goPlanForPicking();
   setTool('face');
-  hint('แตะจุดบนแบบที่คุณ "กำลังหันหน้าไปหา" (เช่น เสาต้นข้างหน้า) — ใน AR กดปุ่ม Face เมื่อกล้องหันไปที่จุดนั้น', cancelTool);
+  hint('Tap the point you are facing (e.g. the next column) — in AR press Face when the camera points at it', cancelTool);
 }
 function facePointAt(ifc) {
   app.project.geo.face = { x: ifc.x, y: ifc.y, z: ifc.z };
   save(); renderBadges(); syncToggles();
-  toast('ตั้ง Face Point แล้ว — ใน AR หันกล้องไปที่จุดนั้นแล้วกดปุ่ม Face', 'ok', 5000);
+  toast('Face Point set — in AR, point the camera at it and press Face', 'ok', 5000);
 }
 // heading (deg clockwise from model +Y) from where the user stands to the Face Point
 function getFaceHeading() {
@@ -1467,28 +1475,28 @@ function deviceModelHeading() { // heading of the phone relative to model +Y, de
 async function toggleSteps(force) {
   if (steps.active && force !== true) {
     steps.stop(); app.loc.stepMode = false; syncModeUI(); updateStatus();
-    toast('Step tracking ปิด', 'info'); return false;
+    toast('Step tracking off', 'info'); return false;
   }
   if (steps.active) return true;
-  if (app.loc.tripod) { toast('โหมดขาตั้งล็อกตำแหน่งอยู่ — ปล่อยขาตั้งก่อนจึงจะนับก้าว', 'info'); return false; }
+  if (app.loc.tripod) { toast('Tripod mode holds the position — release the tripod to count steps', 'info'); return false; }
   // no I'm-Here yet but we know where GPS puts us: start from that
   if (!app.loc.fix && app.loc.ifc) app.loc.fix = { id: 'gps', position: { ...app.loc.ifc }, t: Date.now(), linked: true };
-  if (!app.loc.fix) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here (หรือ Scan QR)', 'warn', 4500); return false; }
+  if (!app.loc.fix) { toast('Set where you stand first: Site → I\'m Here (or Scan QR)', 'warn', 4500); return false; }
   try { await orient.requestPermission(); orient.start(); await steps.requestPermission(); }
   catch (e) { toast(e.message, 'error'); return false; }
-  if (!steps.supported) { toast('อุปกรณ์นี้ไม่มีเซนเซอร์เคลื่อนไหว', 'warn'); return false; }
+  if (!steps.supported) { toast('This device has no motion sensor', 'warn'); return false; }
   steps.start(); app.loc.stepMode = true;
   syncModeUI(); updateStatus();
-  toast(`Step tracking เปิด — เดินแล้วตำแหน่งจะขยับตามก้าว (ก้าวละ ${settings.stepLen} m)`, 'ok', 3500);
+  toast(`Step tracking on — your position follows your steps (${settings.stepLen} m per step)`, 'ok', 3500);
   return true;
 }
 // one step forward along the phone's facing direction (called by the step counter AND by the manual ▲ button)
 function doStep(auto = true) {
-  if (app.loc.tripod) { if (!auto) toast('โหมดขาตั้งล็อกตำแหน่งอยู่ — กดปุ่มขาตั้งเพื่อปล่อย', 'info'); return; }
+  if (app.loc.tripod) { if (!auto) toast('Tripod mode holds the position — press Tripod to release', 'info'); return; }
   const f = app.loc.fix;
-  if (!f) { toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here', 'warn'); return; }
+  if (!f) { toast('Set where you stand first: Site → I\'m Here', 'warn'); return; }
   const h = headingModelNow();
-  if (h == null) { if (!auto) toast('ยังไม่ได้ค่าทิศจากมือถือ — ขยับมือถือเล็กน้อยหรืออนุญาต Motion', 'warn'); return; }
+  if (h == null) { if (!auto) toast('No heading from the device yet — move it slightly or allow Motion access', 'warn'); return; }
   const r = THREE.MathUtils.degToRad(h), L = settings.stepLen;
   const pos = { x: f.position.x + Math.sin(r) * L, y: f.position.y + Math.cos(r) * L, z: f.position.z };
   app.loc.fix = { ...f, position: pos, t: Date.now() };
@@ -1512,26 +1520,26 @@ steps.threshold = settings.stepSens;
 // Position is LOCKED (no steps, no GPS) at a known point and the camera height is FIXED, so the only unknown
 // left is the heading — set it once with drag / Face / QR, then just pan and tilt the phone on the tripod.
 async function toggleTripod() {
-  if (app.loc.tripod) { app.loc.tripod = false; toast('ปล่อยขาตั้ง — กลับไปตามตำแหน่งปกติ', 'info'); updateStatus(); return false; }
+  if (app.loc.tripod) { app.loc.tripod = false; toast('Tripod released — normal tracking resumed', 'info'); updateStatus(); return false; }
   if (!app.loc.fix && app.loc.ifc) app.loc.fix = { id: 'tripod', position: { ...app.loc.ifc }, t: Date.now() };
-  if (!app.loc.fix) { toast('ตั้งจุดตั้งขาตั้งก่อน: Site → I\'m Here หรือกดปุ่ม QR ใน AR', 'warn', 5000); return false; }
-  const v = await promptBox('ความสูงกล้องบนขาตั้ง (เมตร)', 'วัดจากพื้นถึงกล้องมือถือ — ใช้ค่าเดิมทุกครั้งที่ตั้งขา', String(settings.eye));
+  if (!app.loc.fix) { toast('Set the tripod position first: Site → I\'m Here or the QR button in AR', 'warn', 5000); return false; }
+  const v = await promptBox('Camera height on the tripod (m)', 'Floor to phone camera — keep it the same every setup', String(settings.eye));
   if (v === null) return false;
   const h = parseFloat(v);
-  if (!Number.isFinite(h) || h < 0.3 || h > 3) { toast('ความสูงไม่ถูกต้อง (0.3–3 m)', 'warn'); return false; }
+  if (!Number.isFinite(h) || h < 0.3 || h > 3) { toast('Invalid height (0.3–3 m)', 'warn'); return false; }
   settings.eye = h; viewer.walk.eye = h; saveSettings();
   steps.stop(); app.loc.stepMode = true; app.loc.tripod = true;
   computeLoc(); updateStatus(); syncToggles();
-  toast(`ล็อกขาตั้งแล้ว · สูง ${h.toFixed(2)} m · ตำแหน่งไม่ขยับ — ลากนิ้วหรือกด Face/QR เพื่อจัดทิศครั้งเดียว`, 'ok', 6000);
+  toast(`Tripod locked · ${h.toFixed(2)} m high · position fixed — drag or press Face / QR once to align the heading`, 'ok', 6000);
   return true;
 }
 
 // ---------------- tracking mode: Hybrid (steps + GPS pull-back) · Steps only · GPS only
 const TRACK_LABEL = { hybrid: 'Hybrid', steps: 'Steps', gps: 'GPS' };
 const TRACK_HELP = {
-  hybrid: 'Hybrid: นับก้าวให้ขยับเนียน + GPS ค่อย ๆ ดึงกลับเมื่อเพี้ยนสะสม',
-  steps: 'Steps: นับก้าวอย่างเดียว (ไม่ใช้ GPS) — ใช้ในอาคารได้ แต่เพี้ยนสะสม กด I\'m Here รีเซ็ตที่เสา',
-  gps: 'GPS: ตามตำแหน่ง GPS อย่างเดียว — เหมาะกลางแจ้ง (±3–10 m) ต้อง Set Location / I\'m Here ก่อน'
+  hybrid: 'Hybrid: steps move you smoothly, GPS slowly pulls back drift',
+  steps: 'Steps: step counting only (no GPS) — works indoors but drifts; press I\'m Here at a column to reset',
+  gps: 'GPS: GPS only — best outdoors (±3–10 m); needs Set Location / I\'m Here first'
 };
 async function setTrackMode(m, quiet) {
   settings.trackMode = m; saveSettings();
@@ -1557,8 +1565,8 @@ async function cycleTrack() {
 
 // "Walk Track": virtual walkthrough that follows the real walk (steps) and the phone's direction
 async function startWalkTrack() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
-  if (!app.loc.fix) return toast('ตั้งจุดที่ยืนก่อน: Site → I\'m Here', 'warn', 4500);
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
+  if (!app.loc.fix) return toast('Set where you stand first: Site → I\'m Here', 'warn', 4500);
   try { await orient.requestPermission(); orient.start(); } catch (e) { return toast(e.message, 'error'); }
   if (!(await toggleSteps(true))) return;
   setMode('walk');
@@ -1567,12 +1575,12 @@ async function startWalkTrack() {
   computeLoc();
   viewer.persp.position.copy(viewer.ifcToWorld(app.loc.fix.position)).add(new THREE.Vector3(0, viewer.walk.eye, 0));
   syncToggles();
-  toast('Walk Track: เดินจริง โมเดลขยับตาม · ลากนิ้วซ้าย/ขวาเพื่อหมุนโมเดลให้ตรงกับของจริง', 'ok', 5000);
+  toast('Walk Track: walk for real and the model follows · drag left / right to line the model up with reality', 'ok', 5000);
 }
 
 function applyCPFix(cp) {
   const P = app.project;
-  if (cp.projectId && cp.projectId !== P.id) toast('QR นี้มาจากโปรเจกต์อื่น — ใช้พิกัดตาม QR', 'warn', 4000);
+  if (cp.projectId && cp.projectId !== P.id) toast('This QR belongs to another project — using its coordinates', 'warn', 4000);
   let rec = findCP(cp);
   if (!rec) { rec = { id: cp.id || uuid(), name: cp.name, position: cp.position, size: cp.size, mount: cp.mount, heading: cp.heading, createdAt: new Date().toISOString() }; P.geo.controlPoints.push(rec); }
   applyFix(rec, 'qr');
@@ -1586,15 +1594,15 @@ function findCP(cp) {
 // ---------------- QR pose: camera position + heading from the QR image (called by the AR overlay's QR Lock)
 function onQrDetect(det, K) {
   const cp0 = decodeCP(det.text);
-  if (!cp0) return { ok: false, msg: 'QR นี้ไม่ใช่ของ SiteAR' };
+  if (!cp0) return { ok: false, msg: 'This QR is not from SiteAR' };
   const rec = findCP(cp0);
   const cp = { name: (rec && rec.name) || cp0.name, position: (rec && rec.position) || cp0.position, size: cp0.size, mount: cp0.mount, heading: cp0.heading };
   // the QR itself carries the size/mount/heading that were printed; use the project's value if it was corrected later
   if (rec) { cp.size = rec.size || cp.size; cp.mount = rec.mount || cp.mount; cp.heading = rec.heading ?? cp.heading; }
   const pose = poseFromDetection(det, cp.size, K.f, K.cx, K.cy);
-  if (!pose) return { ok: false, msg: `${cp.name}: คำนวณไม่ได้` };
-  if (pose.dist > 4) return { ok: false, msg: `${cp.name} ไกลไป (${pose.dist.toFixed(1)} m) — เข้าใกล้ ≤ 2 m` };
-  if (pose.reproj > 8) return { ok: false, msg: `${cp.name}: ภาพไม่ชัด/เอียงเกินไป` };
+  if (!pose) return { ok: false, msg: `${cp.name}: cannot compute the pose` };
+  if (pose.dist > 4) return { ok: false, msg: `${cp.name} too far (${pose.dist.toFixed(1)} m) — move within 2 m` };
+  if (pose.reproj > 8) return { ok: false, msg: `${cp.name}: image unclear or too oblique` };
   const m = poseToModel(pose, cp);
   // trust falls with distance: ≤2 m full, 2–3 m half, beyond a quarter
   const gain = pose.dist <= 2 ? 1 : pose.dist <= 3 ? 0.5 : 0.25;
@@ -1620,12 +1628,12 @@ function applyFix(rec, method) {
   if (g && P.geo.anchor) {
     const pg = gpsToModel(P.geo.anchor, g.lat, g.lon);
     app.loc.corr = { x: rec.position.x - pg.x, y: rec.position.y - pg.y };
-    toast(`ยึดตำแหน่งที่ ${rec.name} แล้ว (แก้ GPS ${Math.hypot(app.loc.corr.x, app.loc.corr.y).toFixed(1)} m)`, 'ok', 4000);
+    toast(`Position locked to ${rec.name} (GPS corrected by ${Math.hypot(app.loc.corr.x, app.loc.corr.y).toFixed(1)} m)`, 'ok', 4000);
   } else if (g && !P.geo.anchor) {
     P.geo.anchor = { position: { ...rec.position }, lat: g.lat, lon: g.lon, alt: g.alt, bearing: getBearing(), method, accuracy: g.acc, createdAt: new Date().toISOString() };
     app.loc.corr = { x: 0, y: 0 };
-    toast(`ตั้งตำแหน่งจาก ${method === 'self' ? 'self-mark' : 'QR'} ${rec.name} แล้ว — ปรับทิศด้วย 2nd Point`, 'ok', 4500);
-  } else toast(method === 'self' ? `คุณอยู่ที่ ${rec.name} (แตะ I'm Here ใหม่เมื่อเดินไปจุดถัดไป)` : `ยึดตำแหน่งที่ ${rec.name} แล้ว`, 'ok', 4000);
+    toast(`Location set from ${method === 'self' ? 'self-mark' : 'QR'} ${rec.name} — refine the heading with 2nd Point`, 'ok', 4500);
+  } else toast(method === 'self' ? `You are at ${rec.name} (tap I'm Here again at the next point)` : `Position locked to ${rec.name}`, 'ok', 4000);
   save(); renderBadges(); computeLoc(); renderPanel(); updateStatus();
   if (viewer.mode === 'plan') viewer.focusPoint(viewer.ifcToWorld(rec.position), 10);
   else if (viewer.mode === 'orbit') viewer.focusPoint(viewer.ifcToWorld(rec.position), 10);
@@ -1633,18 +1641,35 @@ function applyFix(rec, method) {
 }
 
 // ---------------- gyro / AR
+// Optional "turn with the phone" in Walk. RELATIVE to the current view (no compass needed): at switch-on the
+// heading offset is chosen so the view does not jump sideways; after that the view follows the phone.
+function gyroOff() {
+  const w = viewer.walk; if (!w.gyro) return;
+  w.gyro = false;
+  const e = new THREE.Euler().setFromQuaternion(viewer.persp.quaternion, 'YXZ'); // keep looking where we are now
+  w.yaw = e.y; w.pitch = THREE.MathUtils.clamp(e.x, -1.45, 1.45);
+  syncModeUI();
+}
 async function toggleGyro() {
-  if (!viewer.walk.gyro) {
-    try { await orient.requestPermission(); orient.start(); } catch (e) { return toast(e.message, 'error'); }
-    if (viewer.mode !== 'walk') setMode('walk');
-  }
-  viewer.walk.gyro = !viewer.walk.gyro; viewer.bearing = getBearing();
-  syncToggles();
+  if (viewer.walk.gyro) { gyroOff(); toast('Gyro off — use the look stick', 'info', 1800); return; }
+  try { await orient.requestPermission(); orient.start(); } catch (e) { return toast('Motion & Orientation permission denied', 'error', 4000); }
+  for (let i = 0; i < 15 && !orient.ready; i++) await new Promise((r) => setTimeout(r, 100)); // wait for the first sensor reading
+  if (!orient.ready) return toast('This device has no orientation sensor', 'warn');
+  if (viewer.mode !== 'walk') setMode('walk');
+  const q = viewer.persp.quaternion;
+  let f = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  if (Math.abs(f.y) > 0.85) f = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  const camH = normDeg((Math.atan2(f.x, -f.z) * 180) / Math.PI);
+  viewer.bearing = normDeg(orient.getHeading() - camH); // view heading = phone heading − bearing  → no sideways jump
+  viewer.headingTrim = 0;
+  viewer.walk.gyro = true;
+  syncModeUI();
+  toast('Gyro on: turn the device to look around · drag or use the look stick to adjust · press again to turn off', 'ok', 4500);
 }
 async function startXR() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   if (!(await xrARSupported())) {
-    return modal({ title: 'WebXR AR not available', body: `<p>อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับ WebXR AR</p><ul class="muted"><li><b>Android</b>: ใช้ Chrome + Google Play Services for AR (ARCore) ผ่าน https</li><li><b>iPhone / iPad</b>: Safari ยังไม่รองรับ WebXR AR — ใช้ <b>Camera AR</b> แทน (หรือรอเวอร์ชัน Unity/ARKit)</li></ul>`,
+    return modal({ title: 'WebXR AR not available', body: `<p>This device / browser does not support WebXR AR.</p><ul class="muted"><li><b>Android</b>: Chrome + Google Play Services for AR (ARCore) over HTTPS</li><li><b>iPhone / iPad</b>: Safari does not support WebXR AR yet — use <b>Camera AR</b> instead (or the future Unity / ARKit app)</li></ul>`,
       actions: [{ label: 'Close', onClick: (c) => c() }, { label: 'Use Camera AR', kind: 'primary', icon: 'camera', onClick: (c) => { c(); startCamAR(); } }] });
   }
   try {
@@ -1655,7 +1680,7 @@ async function startXR() {
   } catch (e) { console.error(e); toast(`AR: ${e.message}`, 'error', 5000); }
 }
 async function startCamAR() {
-  if (!viewer.models.children.length) return toast('เปิดโมเดลก่อน', 'warn');
+  if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   try {
     clearSelection(); setTool('select');
     await ar.startCamera();
@@ -1666,7 +1691,7 @@ async function startCamAR() {
 
 // ================================================================ export
 async function cmdExportBCF() {
-  if (!app.project.markups.length) return toast('ยังไม่มีมาร์คให้ export', 'warn');
+  if (!app.project.markups.length) return toast('No markups to export yet', 'warn');
   busy('Creating BCF…');
   try { download(await exportBCF(app.project, settings.author || 'SiteAR'), `${slug(app.project.name)}.bcfzip`); toast(`Exported ${app.project.markups.length} topics (BCF 3.0)`, 'ok'); }
   catch (e) { toast(e.message, 'error'); }
@@ -1699,7 +1724,7 @@ $('#file-project').onchange = async (e) => {
       const p = JSON.parse(await file.text());
       if (!p.schema || !String(p.schema).startsWith('sitear.project')) throw new Error('Not a SiteAR project file');
       const exists = await store.getProject(p.id);
-      if (exists && !(await confirmBox('Replace project', `มีโปรเจกต์ "${exists.name}" อยู่แล้ว — แทนที่ด้วยไฟล์นี้?`, 'Replace', true))) return;
+      if (exists && !(await confirmBox('Replace project', `A project "${exists.name}" already exists — replace it with this file?`, 'Replace', true))) return;
       await store.putProject(p); await openProject(p);
       toast('Project imported', 'ok');
     }
@@ -1710,42 +1735,42 @@ function revitGuide() {
   modal({ title: 'Revit ⇄ SiteAR workflow', wide: true, body: `
     <div class="guide">
       <h4>1 · Revit → SiteAR</h4>
-      <ol><li>Revit: <b>File → Export → IFC</b> (IFC4 Reference View หรือ IFC2x3 Coordination View 2.0)</li>
-        <li>Setup → <b>Coordinate Base: Shared Coordinates</b> (หรือ Survey Point) เพื่อให้พิกัดตรงกับที่เซอร์เวย์ใช้</li>
-        <li>ติ๊ก <i>Export IFC common property sets</i> และ <i>Export base quantities</i> ตามต้องการ</li>
-        <li>เปิดไฟล์ .ifc ใน SiteAR (Open Model) — ถ้าใน Revit ตั้ง Site location / True North ไว้ SiteAR จะเสนอให้ใช้ทันที</li></ol>
-      <h4>2 · หน้างาน</h4>
-      <ol><li><b>Set Location</b>: ยืนที่จุดเดียว → แตะจุดนั้นบนแปลน → Capture GPS</li>
-        <li>หรือ <b>Create QR</b> ในออฟฟิศ → ให้เซอร์เวย์ยิงหมุดตามพิกัด X/Y/Z → หน้างาน <b>Scan QR</b> เพื่อยึดตำแหน่งแม่นยำ</li>
-        <li>เดินดูด้วย Plan / Walk + Follow GPS / Camera AR / WebXR AR แล้ว Mark จุด (Comment / Note / Issue + รูป)</li></ol>
+      <ol><li>Revit: <b>File → Export → IFC</b> (IFC4 Reference View or IFC2x3 Coordination View 2.0)</li>
+        <li>Setup → <b>Coordinate Base: Shared Coordinates</b> (or Survey Point) so coordinates match the surveyor</li>
+        <li>Tick <i>Export IFC common property sets</i> and <i>Export base quantities</i> as needed</li>
+        <li>Open the .ifc in SiteAR (Open Model)</li></ol>
+      <h4>2 · Review</h4>
+      <ol><li><b>Walk</b> through the model with the sticks (or W A S D on a PC)</li>
+        <li><b>Capture</b> views and <b>Mark</b> points (Comment / Note / Issue + photos)</li>
+        <li>Keep related captures and marks together in <b>Groups</b></li></ol>
       <h4>3 · SiteAR → Revit</h4>
-      <ol><li><b>Export BCF</b> (.bcfzip, BCF 3.0) — ทุกมาร์คมีมุมกล้อง, รูป, IFC GUID ของ element และพิกัด</li>
-        <li>Revit: ติดตั้ง add-in ฟรี เช่น <b>BIMcollab Zoom / BCF Manager for Revit</b> หรือ <b>Revizto / BIM Track</b> แล้ว Import BCF → คลิก topic → Revit ซูมไปที่ element นั้น</li>
-        <li>โปรแกรม open source: <b>Bonsai (BlenderBIM)</b>, <b>xBIM / BIMvision</b>, <b>IfcOpenShell</b> อ่าน BCF ได้</li>
-        <li>ต้องการวางหมุดเป็น element จริงใน Revit: ใช้ <b>Project JSON</b> กับสคริปต์ Dynamo/pyRevit (ดู docs/REVIT.md)</li></ol>
-      <p class="muted small">พิกัดทั้งหมดในไฟล์ = พิกัด IFC (เมตร, Z ขึ้น) — ตรงกับ Revit เมื่อ export ด้วย Shared Coordinates</p>
+      <ol><li><b>Export BCF</b> (.bcfzip, BCF 3.0) — each markup carries the camera view, images, the element IFC GUID and coordinates</li>
+        <li>Revit: install a BCF add-in such as <b>BIMcollab Zoom / BCF Manager for Revit</b> or <b>Revizto / BIM Track</b>, import the BCF, click a topic and Revit zooms to the element</li>
+        <li>Open source: <b>Bonsai (BlenderBIM)</b>, <b>xBIM / BIMvision</b> and <b>IfcOpenShell</b> read BCF</li>
+        <li>To place pins as real Revit elements, use the <b>Project JSON</b> with the Dynamo / pyRevit script (see docs/REVIT.md)</li></ol>
+      <p class="muted small">All coordinates are IFC coordinates (metres, Z up) — they match Revit when exported with Shared Coordinates</p>
     </div>`, actions: [{ label: 'Close', kind: 'primary', onClick: (c) => c() }] });
 }
 
 function settingsDialog() {
   const body = h(`<div>
-    <label class="field"><span>ชื่อผู้บันทึก · Author</span><input id="st-a" value="${esc(settings.author)}"></label>
+    <label class="field"><span>Author</span><input id="st-a" value="${esc(settings.author)}"></label>
     <div class="field-row">
       <label class="field"><span>Eye height (m)</span><input id="st-e" inputmode="decimal" value="${settings.eye}"></label>
-      <label class="field"><span>Camera AR FOV แนวตั้ง (°)</span><input id="st-f" inputmode="decimal" value="${settings.camFov}"></label>
-      <label class="field"><span>ความยาวก้าว (m)</span><input id="st-sl" inputmode="decimal" value="${settings.stepLen}"></label>
+      <label class="field"><span>Camera AR vertical FOV (°)</span><input id="st-f" inputmode="decimal" value="${settings.camFov}"></label>
+      <label class="field"><span>Step length (m)</span><input id="st-sl" inputmode="decimal" value="${settings.stepLen}"></label>
     </div>
-    <label class="field"><span>ความไวนับก้าว (ซ้าย = ไวมาก, ขวา = ไวน้อย)</span><input id="st-ss" type="range" min="0.3" max="2" step="0.1" value="${settings.stepSens}"></label>
-    <p class="muted small">ถ้าเดินแล้วตัวเลขก้าวไม่ขึ้น ให้เลื่อนไปทางซ้าย · ถ้าก้าวขึ้นทั้งที่ยืนนิ่งให้เลื่อนไปทางขวา · ใช้ปุ่ม ▲ เดินเองเป็นตัวสำรองได้</p>
+    <label class="field"><span>Step sensitivity (left = more sensitive)</span><input id="st-ss" type="range" min="0.3" max="2" step="0.1" value="${settings.stepSens}"></label>
+    <p class="muted small">If steps are missed, move left · if steps count while standing still, move right · the ▲ button is a manual backup</p>
     <div class="field-row">
       <label class="field"><span>AR model opacity</span><input id="st-o" type="range" min="0.1" max="1" step="0.05" value="${settings.arOpacity}"></label>
       <label class="field"><span>GPS averaging (s)</span><input id="st-g" inputmode="numeric" value="${settings.gpsAvg}"></label>
     </div>
     <div class="field-row">
-      <label class="field"><span>Scope box: ระยะไกลสุด (เท่าของขนาดโมเดล)</span><input id="st-sc" inputmode="decimal" value="${settings.scopeFactor}"></label>
+      <label class="field"><span>Scope box: max distance (× model size)</span><input id="st-sc" inputmode="decimal" value="${settings.scopeFactor}"></label>
     </div>
-    <p class="muted small">Scope: กล้องออกห่างจากกลางโมเดลได้ไม่เกินค่านี้ × รัศมีโมเดล (ค่าเริ่มต้น 3) และโมเดลจะไม่หลุดจากจอ</p>
-    <p class="muted small">Camera AR FOV: ถ้าโมเดลดูใหญ่/เล็กกว่าของจริง ให้ปรับค่านี้ (มือถือส่วนใหญ่ 55–65°)</p></div>`);
+    <p class="muted small">Scope: the camera stays within this many model radii of the centre (default 3) and the model stays on screen</p>
+    <p class="muted small">Camera AR FOV: adjust if the model looks bigger / smaller than reality (most phones 40–50° vertical)</p></div>`);
   modal({ title: 'Settings', body, actions: [{ label: 'Cancel', onClick: (c) => c() }, { label: 'Save', kind: 'primary', icon: 'check', onClick: (c) => {
     settings.author = body.querySelector('#st-a').value.trim();
     settings.eye = parseFloat(body.querySelector('#st-e').value) || 1.6;
@@ -1773,7 +1798,7 @@ function updateStatus() {
   const an = $('#st-anchor');
   an.dataset.s = a ? 'good' : 'off';
   an.dataset.s = a || app.loc.fix ? 'good' : 'off';
-  const fixLabel = app.loc.tripod ? ` · ขาตั้ง ${settings.eye.toFixed(2)} m` : app.loc.fix ? (app.loc.stepMode ? (settings.trackMode === 'hybrid' ? ' · Hybrid' : ' · Steps') : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
+  const fixLabel = app.loc.tripod ? ` · Tripod ${settings.eye.toFixed(2)} m` : app.loc.fix ? (app.loc.stepMode ? (settings.trackMode === 'hybrid' ? ' · Hybrid' : ' · Steps') : app.loc.fix.id === 'self' ? ' · Self' : ' · QR') : '';
   an.innerHTML = `${icon('anchor')}<span>${a ? `N ${getBearing().toFixed(1)}°` : app.loc.fix ? 'Here' : 'No location'}${fixLabel}</span>`;
 }
 viewer.addEventListener('frame', () => {
@@ -1782,7 +1807,9 @@ viewer.addEventListener('frame', () => {
   if (gps.active || app.loc.fix || orient.listening) computeLoc();
   if (app.wm && app.wm.state === 'walk' && viewer.youWorld) viewer.followPlan(viewer.youWorld, 0.25);
 });
-viewer.addEventListener('mode', syncModeUI);
+viewer.addEventListener('mode', (e) => { if (e.detail.mode !== 'walk') gyroOff(); syncModeUI(); });
+$('#gyro-btn').onclick = () => toggleGyro();
+document.body.classList.toggle('touch', isTouch);
 viewer.addEventListener('clip', () => syncToggles());
 $('#compass').onclick = () => goHome();
 $('#home-btn').onclick = () => goHome();
@@ -1798,16 +1825,17 @@ $('#modebar').onclick = (e) => {
 
 // ---- game-style Walk controls: left stick = move, right stick = look, ▲▼ = fly up / down, speed button
 function makeStick(el, onChange) {
-  const knob = el.querySelector('.knob'), R = 42;
+  const knob = el.querySelector('.knob');
   let id = null, cx = 0, cy = 0;
   const move = (e) => {
     if (e.pointerId !== id) return;
+    const R = Math.max(16, el.clientWidth / 2 - knob.offsetWidth / 2); // travel follows the (CSS) stick size
     let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy);
     if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
     knob.style.transform = `translate(${dx}px, ${dy}px)`; onChange(dx / R, dy / R);
   };
-  const end = (e) => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; onChange(0, 0); };
-  el.addEventListener('pointerdown', (e) => { id = e.pointerId; try { el.setPointerCapture(id); } catch (err) { /* synthetic pointer */ } const r = el.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e); });
+  const end = (e) => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; el.classList.remove('active'); onChange(0, 0); };
+  el.addEventListener('pointerdown', (e) => { id = e.pointerId; el.classList.add('active'); try { el.setPointerCapture(id); } catch (err) { /* synthetic pointer */ } const r = el.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e); });
   el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
 }
 makeStick($('#joystick'), (x, y) => { viewer.walk.joy.x = x; viewer.walk.joy.y = y; });
@@ -1817,9 +1845,11 @@ for (const [id, dir] of [['#fly-up', 1], ['#fly-down', -1]]) {
   b.addEventListener('pointerdown', (e) => { e.preventDefault(); viewer.walk.vert = dir; try { b.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ } });
   for (const ev of ['pointerup', 'pointercancel']) b.addEventListener(ev, () => { viewer.walk.vert = 0; });
 }
-const SPEEDS = [[1.4, 'เดิน'], [3, 'วิ่ง'], [6, 'เร็ว'], [12, 'บิน']];
+const SPEEDS = [[1.4, 'WALK'], [3, 'RUN'], [6, 'FAST'], [12, 'FLY']];
 let speedIdx = 0;
-$('#speed-btn').onclick = () => { speedIdx = (speedIdx + 1) % SPEEDS.length; viewer.walk.speed = SPEEDS[speedIdx][0]; $('#speed-btn').textContent = SPEEDS[speedIdx][1]; toast(`ความเร็ว: ${SPEEDS[speedIdx][1]} (${SPEEDS[speedIdx][0]} m/s)`, 'info', 1200); };
+$('#speed-btn').onclick = () => { speedIdx = (speedIdx + 1) % SPEEDS.length; viewer.walk.speed = SPEEDS[speedIdx][0]; $('#speed-btn').textContent = SPEEDS[speedIdx][1]; toast(`Speed: ${SPEEDS[speedIdx][1]} (${SPEEDS[speedIdx][0]} m/s)`, 'info', 1200); };
+
+$('#st-ver').textContent = `v${APP_VERSION}`;
 
 // shelved UI
 if (!LOCATION_FEATURES) { $('#st-anchor').hidden = true; $('#st-gps').hidden = true; const ar = $('#modebar [data-mode=ar]'); if (ar) ar.hidden = true; }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="th">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
@@ -77,55 +77,58 @@
         </div>
 
         <div id="selchip" class="selchip" hidden></div>
-        <div id="joystick" class="joystick" hidden><div class="knob"></div></div>
-        <div id="joystick-look" class="joystick right" hidden><div class="knob"></div></div>
+        <div id="joystick" class="joystick" hidden><span class="jl">MOVE</span><div class="knob"></div></div>
+        <div id="joystick-look" class="joystick right" hidden><span class="jl">LOOK</span><div class="knob"></div></div>
+        <button id="gyro-btn" class="gyro-btn" hidden title="Turn the device to look around (on / off)">
+          <span class="gdot"></span><span>GYRO</span><b id="gyro-state">OFF</b>
+        </button>
         <div id="fly" class="fly" hidden>
-          <button id="fly-up" aria-label="ขึ้น"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
-          <button id="speed-btn" title="ความเร็ว">เดิน</button>
-          <button id="fly-down" aria-label="ลง"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v13M6 13l6 6 6-6"/></svg></button>
+          <button id="fly-up" aria-label="Up" title="Up (E)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 14.5 12 9l5.5 5.5"/></svg></button>
+          <button id="speed-btn" title="Speed">WALK</button>
+          <button id="fly-down" aria-label="Down" title="Down (Q)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5 12 15l5.5-5.5"/></svg></button>
         </div>
         <div id="quick" class="quick">
-          <button id="q-capture" title="แคปภาพมุมมองนี้ (C)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8A1.5 1.5 0 0 1 5 6.5h2.5L9 4.5h6l1.5 2H19A1.5 1.5 0 0 1 20.5 8v10A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/><circle cx="12" cy="12.8" r="3.6"/></svg><span>แคป</span></button>
-          <button id="q-mark" title="มาร์คตรงเป้ากลางจอ (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.4"/></svg><span>มาร์ค</span></button>
-          <button id="q-group" class="chip" title="กลุ่มที่ใช้อยู่ (แตะเพื่อเปลี่ยน)"><span id="q-group-name">ยังไม่มีกลุ่ม</span></button>
+          <button id="q-capture" title="Capture this view (C)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8A1.5 1.5 0 0 1 5 6.5h2.5L9 4.5h6l1.5 2H19A1.5 1.5 0 0 1 20.5 8v10A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/><circle cx="12" cy="12.8" r="3.6"/></svg><span>Capture</span></button>
+          <button id="q-mark" title="Mark under the crosshair (M)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.4"/></svg><span>Mark</span></button>
+          <button id="q-group" class="chip" title="Active group (tap to change)"><span id="q-group-name">No group</span></button>
         </div>
         <div id="crosshair" class="crosshair" hidden><span></span></div>
         <!-- Walk & Mark: the simple mode (plan view, tap where you stand, walk, press Mark) -->
         <div id="wm" class="wm" hidden>
           <div class="wm-top">
             <div class="wm-msg" id="wm-msg"></div>
-            <button class="wm-btn" id="wm-exit">ออก</button>
+            <button class="wm-btn" id="wm-exit">Exit</button>
           </div>
           <div class="wm-bottom">
             <div class="wm-left"></div>
             <div class="wm-center">
-              <div class="wm-ahead" id="wm-ahead" title="มาร์คห่างจากที่ยืนไปข้างหน้ากี่เมตร">
-                <span>ระยะข้างหน้า</span><button data-d="0" class="on">0</button><button data-d="1">1 m</button><button data-d="2">2 m</button><button data-d="3">3 m</button>
+              <div class="wm-ahead" id="wm-ahead" title="How far ahead of you to place the mark">
+                <span>Ahead</span><button data-d="0" class="on">0</button><button data-d="1">1 m</button><button data-d="2">2 m</button><button data-d="3">3 m</button>
               </div>
-              <button class="wm-mark" id="wm-mark">มาร์คตรงนี้</button>
+              <button class="wm-mark" id="wm-mark">Mark here</button>
             </div>
             <div class="wm-right">
-              <button class="wm-btn" id="wm-reset">ตั้งตำแหน่งใหม่</button>
-              <div class="wm-rot"><button class="wm-btn" id="wm-rotl" aria-label="หมุนทิศซ้าย">⟲ 10°</button><button class="wm-btn" id="wm-rotr" aria-label="หมุนทิศขวา">10° ⟳</button></div>
+              <button class="wm-btn" id="wm-reset">Reset position</button>
+              <div class="wm-rot"><button class="wm-btn" id="wm-rotl" aria-label="Turn left">⟲ 10°</button><button class="wm-btn" id="wm-rotr" aria-label="Turn right">10° ⟳</button></div>
             </div>
           </div>
         </div>
-        <button id="step-btn" class="step-btn" hidden aria-label="Step forward" title="แตะ = เดิน 1 ก้าว · กดค้าง = เดินต่อเนื่อง">
-          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg><span>เดิน</span>
+        <button id="step-btn" class="step-btn" hidden aria-label="Step forward" title="Tap = one step · hold = keep walking">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg><span>Step</span>
         </button>
 
         <div id="empty" class="empty">
           <div class="empty-card">
             <div class="empty-orb"></div>
             <h1>Bring your BIM <span>on site.</span></h1>
-            <p>เปิดโมเดล IFC จาก Revit, แบบ DXF หรือ GLB · ระบุตำแหน่งด้วย GPS / QR · มาร์ค คอมเมนต์ โน้ต ใน 3D, แปลน, Walk หรือ AR · ส่งกลับ Revit ด้วย BCF</p>
+            <p>Open IFC from Revit, DXF or GLB · walk through in 3D, plan or first person · capture views and mark comments, notes and issues · send them back to Revit as BCF</p>
             <div class="empty-actions">
               <button class="btn primary lg" data-e="open"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg><span>Open model</span></button>
               <button class="btn lg" data-e="sample"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6M4 20h16"/></svg><span>Try sample</span></button>
               <button class="btn ghost lg" data-e="import"><span>Import project</span></button>
             </div>
             <div class="formats"><span>IFC 2x3 / 4</span><span>DXF</span><span>GLB · GLTF</span><span>OBJ</span><span>BCF 3.0</span></div>
-            <p class="drop-hint">หรือลากไฟล์มาวางที่นี่</p>
+            <p class="drop-hint">or drop files here</p>
           </div>
         </div>
         <div id="busy" class="busy" hidden><div class="spinner"></div><span>Loading…</span></div>
@@ -152,6 +155,7 @@
       <span class="st-item" id="st-anchor"></span>
       <span class="st-item" id="st-gps"></span>
       <span class="st-item muted hide-sm">IFC · m · Z-up</span>
+      <span class="st-item muted" id="st-ver" title="App version — if it does not match your upload, close and reopen the app"></span>
     </footer>
   </div>
 
