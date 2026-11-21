@@ -196,6 +196,22 @@ body:not(.touch) .fly { left: 12px; } /* PC: no sticks, so the buttons take the 
 .cam-panel input[type=range] { width: 100%; accent-color: var(--accent); }
 .cam-panel b { font: 500 10px var(--mono); color: var(--text-2); text-align: right; }
 body.cam-on #viewport::after { display: none; }
+.cam-row { display: flex; align-items: center; gap: 4px; }
+.cam-row button { flex: 1; height: 26px; border-radius: 7px; border: 1px solid rgba(96,165,250,.22); font: 600 9px var(--mono); letter-spacing: .12em; color: var(--text-2); background: rgba(255,255,255,.03); }
+.cam-row button:active { background: rgba(59,130,246,.25); }
+.cam-row button.primary, .cam-row button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cam-qr-row button { flex: 0 0 auto; padding: 0 10px; }
+.cam-qr-row span { flex: 1; font: 500 10px var(--mono); color: var(--text-2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cam-view { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,.04); border: 1px solid rgba(96,165,250,.18); }
+.cam-view button { flex: 1; height: 22px; border-radius: 6px; font: 600 9px var(--mono); letter-spacing: .16em; color: var(--muted); }
+.cam-view button.on { background: var(--accent); color: #fff; }
+/* SPLIT: the live camera becomes a picture-in-picture window in the top-right corner (left of the compass) */
+body.cam-pip #camfeed { inset: auto; top: 12px; right: 76px; width: clamp(140px, 28vw, 340px); height: auto; z-index: 5; border-radius: 12px; background: #000; cursor: pointer;
+  border: 1px solid rgba(96,165,250,.45); box-shadow: 0 14px 34px -14px rgba(0,0,0,.85), 0 0 0 4px rgba(7,11,20,.35); }
+.pip-tag { position: absolute; z-index: 6; top: 20px; right: 84px; display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; pointer-events: none;
+  background: rgba(7,11,20,.72); font: 600 9px var(--mono); letter-spacing: .18em; color: #93c5fd; }
+.pip-tag i { width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 8px #3b82f6; animation: pulse 1.6s infinite; }
+.compare-img { display: block; width: 100%; border-radius: 10px; border: 1px solid rgba(96,165,250,.25); }
 @media (max-width: 520px) { .cam-panel { right: 12px; bottom: 214px; } }
 @media (max-width: 520px) { body.touch[data-mode=walk] .modebar { bottom: 156px; } } /* narrow phones: lift the mode bar above the sticks */
 .quick { position: absolute; z-index: 4; right: 12px; top: 128px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
@@ -215,7 +231,9 @@ body[data-mode=xr] .quick, body[data-mode=cam-ar] .quick { display: none; }
   .joystick.right { right: 8px; bottom: 8px; }
   .gyro-btn { right: 8px; bottom: 112px; height: 28px; padding: 0 10px 0 9px; }
   .gyro-btn.cam-btn { bottom: 146px; }
-  .cam-panel { right: 116px; bottom: 112px; width: 196px; padding: 6px 8px; gap: 4px; }
+  .cam-panel { left: 140px; right: auto; bottom: 8px; width: 196px; padding: 6px 8px; gap: 4px; }
+  body.cam-pip #camfeed { top: 60px; right: 120px; width: 150px; }
+  .pip-tag { top: 66px; right: 126px; }
   /* short screen: Capture / Mark / Group go in a row at the top, next to the compass, so the right edge stays free for the look stick */
   .quick { right: 58px; top: 8px; transform: none; gap: 6px; flex-direction: row; align-items: center; } .quick button { width: 50px; height: 46px; font-size: 10px; } .quick .chip { height: 32px; width: 64px; }
   .quick .chip span { max-width: 58px; }

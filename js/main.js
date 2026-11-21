@@ -6,11 +6,11 @@ import { store } from './store.js';
 import { Ribbon, toast, hint, hideHint, modal, confirmBox, promptBox, download, fileToDataURL, $, $$, h, esc } from './ui.js';
 import { icon, LOGO } from './icons.js';
 import { newProject, newMarkup, uuid, MARKUP_TYPES, STATUSES, PRIORITIES, statusColor, markupTitle, timeAgo, SCHEMA } from './project.js';
-import { gpsToModel, modelToGps, ifcToRaw, rawToIfc, gpsToEN, bearingFromPair, normDeg, modelHeadingOfRawDir, fmtM, fmtLL } from './geo.js';
+import { gpsToModel, modelToGps, ifcToRaw, rawToIfc, gpsToEN, bearingFromPair, normDeg, normDeg180, modelHeadingOfRawDir, fmtM, fmtLL } from './geo.js';
 import { GPS, DeviceOrient, StepTracker } from './sensors.js';
 import { ARController, xrARSupported } from './ar.js';
 import { exportBCF, importBCF } from './bcf.js';
-import { encodeCP, decodeCP, cpSheet, startScan, decodeImageFile } from './qr.js';
+import { encodeCP, decodeCP, cpSheet, startScan, decodeImageFile, detectQR } from './qr.js';
 import { poseFromDetection, poseToModel } from './pose.js';
 
 // ================================================================ settings
@@ -20,7 +20,8 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ } };
 
 // ================================================================ state
-const cam = { on: false, stream: null, prevFov: 55 }; // CAM overlay state (Walk mode)
+// CAM state (Walk mode): live camera with the model fitted into it at true scale
+const cam = { on: false, stream: null, prevFov: 55, view: settings.camView === 'split' ? 'split' : 'overlay', anchor: null, qr: false, qrT: 0, qrLast: 0 };
 const app = {
   project: null,
   tool: 'select', toolData: null,
@@ -56,12 +57,12 @@ ar.addEventListener('end', () => { syncModeUI(); });
 // ================================================================ ribbon
 // Shown in the status bar so you can see at a glance whether a phone/iPad has picked up the latest upload.
 // Bump this together with VERSION in sw.js every time files are uploaded.
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 // Location features (GPS, step tracking, QR control points, tripod, Walk&Mark, AR overlay) are SHELVED for now.
 // All the code is still here — set this to true to bring every button back.
 const LOCATION_FEATURES = false;
-const LOCATION_CMDS = new Set(['walk-mark', 'self-mark', 'face-point', 'set-location', 'gps', 'follow', 'qr-create', 'qr-scan', 'track', 'track-clear',
+const LOCATION_CMDS = new Set(['walk-mark', 'self-mark', 'face-point', 'set-location', 'gps', 'follow', 'qr-scan', 'track', 'track-clear',
   'heading-2pt', 'compass', 'ar-xr', 'ar-cam', 'walk-track', 'track-mode', 'steps']);
 
 const RIBBON_FULL = [
@@ -111,6 +112,8 @@ const RIBBON_FULL = [
       { cmd: 'section', icon: 'section', label: 'Section', tip: 'Horizontal section (plan cut)' },
       { cmd: 'grid', icon: 'grid', label: 'Grid' },
       { cmd: 'models', icon: 'layers', label: 'Models' }] },
+    { label: 'Site QR', items: [
+      { cmd: 'qr-create', icon: 'qr', label: 'Create QR', tip: 'Create a QR at model coordinates — print it, fix it on site, then QR LOCK in CAM' }] },
     { label: 'Navigation', items: [
       { cmd: 'home', icon: 'home', label: 'Home', tip: 'Back to the Home view (H)' },
       { cmd: 'set-home', icon: 'sethome', label: 'Set Home', tip: 'Set the current view as Home' },
@@ -356,6 +359,7 @@ viewer.addEventListener('tap', async (e) => {
     setPickReadout(viewer.worldToIfc(hit.point));
     return clearSelection();
   }
+  if (tool === 'place-model') { setTool('select'); return placeModelAt(x, y); } // CAM: tap on the real ground
   const hit = viewer.pick(x, y, { markers: false });
   if (!hit) return toast('No surface there — tap on the model', 'warn');
   const ifc = viewer.worldToIfc(hit.point);
@@ -765,17 +769,18 @@ function aimPoint() {
 async function captureView() {
   if (!viewer.models.children.length) return toast('Open a model first', 'warn');
   const author = await ensureAuthor(), g = ensureGroup(), a = aimPoint();
-  const shots = cam.on ? camFrames() : null; // CAM on: overlay (site + model) as the main image, plain site photo attached
+  const shots = cam.on ? camShots() : null; // CAM on: model fitted into the site photo + the plain site photo
   const m = newMarkup(app.project, {
     type: 'capture', author, position: viewer.worldToIfc(a.point), group: g.id, source: shots ? 'capture-cam' : 'capture',
-    text: shots ? 'Site vs model (overlay + site photo)' : '',
+    text: shots ? 'Model on site (overlay)' : '',
     viewpoint: viewer.getViewState(), snapshot: shots ? shots.overlay : viewer.snapshot(1280, 'image/jpeg', 0.85),
     photos: shots ? [shots.real] : []
   });
   app.project.markups.push(m); app.sel = m.id;
   const s = h('<div class="shutter"></div>'); $('#viewport').appendChild(s); setTimeout(() => s.remove(), 400);
   save(); refreshMarkers(); renderPanel();
-  toast(shots ? `Captured #${m.number} · overlay + site photo · ${g.name}` : `Captured #${m.number} · ${g.name}`, 'ok', 2000);
+  if (shots) showCompare(m); // show the comparison straight away
+  else toast(`Captured #${m.number} · ${g.name}`, 'ok', 2000);
 }
 
 // ================================================================ CAM: live camera behind the model (Walk)
@@ -789,45 +794,172 @@ async function toggleCam() {
     cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
   } catch (e) { return toast(`Camera: ${e.name === 'NotAllowedError' ? 'permission denied' : e.message}`, 'error', 4000); }
   const v = $('#camfeed'); v.srcObject = cam.stream; v.hidden = false;
-  try { await v.play(); } catch (e) { /* autoplay is allowed for muted inline video */ }
+  v.play().catch(() => {}); // don't wait: some cameras take a moment to deliver the first frame, the controls must work at once
   cam.on = true; cam.prevFov = viewer.persp.fov;
   viewer.persp.fov = settings.camFov; viewer.persp.updateProjectionMatrix();
-  viewer.setOpacityFactor(settings.camOpacity);
-  viewer.grid.visible = false;
-  document.body.classList.add('cam-on');
   $('#cam-op').value = settings.camOpacity; $('#cam-op-v').textContent = `${Math.round(settings.camOpacity * 100)}%`;
   $('#cam-fov').value = settings.camFov; $('#cam-fov-v').textContent = `${Math.round(settings.camFov)}°`;
-  syncModeUI();
+  $('#cam-h').value = settings.eye; $('#cam-h-v').textContent = `${settings.eye.toFixed(2)} m`;
+  applyCamView();
   toast(viewer.walk.gyro
-    ? 'CAM on — move to where you stand and line the model up · Capture saves overlay + site photo'
-    : 'CAM on — turn GYRO on so the view follows the device, then line the model up with the sticks', 'ok', 5000);
+    ? 'CAM on — press PLACE and tap the ground, or aim at a QR and press QR LOCK'
+    : 'CAM on — turn GYRO on, then PLACE the model on the ground (or QR LOCK to a printed QR)', 'ok', 5000);
 }
 function camOff(notify) {
   if (!cam.on) return;
-  cam.on = false;
+  cam.on = false; setQrLock(false);
   if (cam.stream) cam.stream.getTracks().forEach((t) => t.stop());
   cam.stream = null;
   const v = $('#camfeed'); v.srcObject = null; v.hidden = true;
   viewer.persp.fov = cam.prevFov || 55; viewer.persp.updateProjectionMatrix();
-  viewer.setOpacityFactor(1); viewer.setGrid(settings.grid);
-  document.body.classList.remove('cam-on');
-  syncModeUI();
+  applyCamView();
   if (notify) toast('CAM off', 'info', 1200);
 }
-// two JPEGs framed exactly like the screen (video is object-fit: cover): site photo, and site photo + model
-function camFrames() {
+// OVERLAY = site video full screen behind a see-through model (like a native AR app)
+// SPLIT   = model full screen, site video as a small window in the top-right corner
+function applyCamView() {
+  const overlay = cam.on && cam.view === 'overlay', split = cam.on && cam.view === 'split';
+  document.body.classList.toggle('cam-on', overlay);
+  document.body.classList.toggle('cam-pip', split);
+  viewer.setOpacityFactor(overlay ? settings.camOpacity : 1);
+  if (cam.on) viewer.grid.visible = !overlay && settings.grid; else viewer.setGrid(settings.grid);
+  $('#pip-tag').hidden = !split;
+  $('#cam-op-row').hidden = !overlay;
+  $$('#cam-view [data-v]').forEach((b) => b.classList.toggle('on', b.dataset.v === cam.view));
+  syncModeUI();
+}
+function setCamView(v) { cam.view = v; settings.camView = v; saveSettings(); applyCamView(); }
+$('#cam-view').onclick = (e) => { const b = e.target.closest('[data-v]'); if (b) setCamView(b.dataset.v); };
+$('#camfeed').addEventListener('click', () => { if (cam.on && cam.view === 'split') setCamView('overlay'); }); // tap the small window to go full overlay
+const fitPip = () => { const v = $('#camfeed'); if (v.videoWidth) v.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`; };
+$('#camfeed').addEventListener('loadedmetadata', fitPip);
+$('#camfeed').addEventListener('resize', fitPip); // iPad rotation changes the stream size
+
+// draw the video into (w × h) the same way the screen shows it (object-fit: cover)
+function drawCover(g, v, w, h) {
+  if (!v.videoWidth) { g.fillStyle = '#000'; g.fillRect(0, 0, w, h); return; }
+  const s = Math.max(w / v.videoWidth, h / v.videoHeight), dw = v.videoWidth * s, dh = v.videoHeight * s;
+  g.drawImage(v, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+// Capture in CAM: the model fitted INTO the site photo (true scale, as seen on screen) + the plain site photo
+function camShots() {
   const v = $('#camfeed'), cv = viewer.canvas;
+  const prevOp = viewer.opacityFactor, prevGrid = viewer.grid.visible;
+  viewer.setOpacityFactor(settings.camOpacity); viewer.grid.visible = false; // same look as OVERLAY, also when in SPLIT
   viewer.renderer.render(viewer.scene, viewer.camera);
   const k = Math.min(1, 1600 / Math.max(cv.width, cv.height)), w = Math.round(cv.width * k), hh = Math.round(cv.height * k);
   const c = document.createElement('canvas'); c.width = w; c.height = hh;
   const g = c.getContext('2d');
-  if (v.videoWidth) {
-    const s = Math.max(w / v.videoWidth, hh / v.videoHeight), dw = v.videoWidth * s, dh = v.videoHeight * s;
-    g.drawImage(v, (w - dw) / 2, (hh - dh) / 2, dw, dh);
-  } else { g.fillStyle = '#000'; g.fillRect(0, 0, w, hh); }
+  drawCover(g, v, w, hh);
   const real = c.toDataURL('image/jpeg', 0.85);
   g.drawImage(cv, 0, 0, w, hh);
-  return { real, overlay: c.toDataURL('image/jpeg', 0.85) };
+  const overlay = c.toDataURL('image/jpeg', 0.86);
+  viewer.setOpacityFactor(prevOp); viewer.grid.visible = prevGrid;
+  return { overlay, real };
+}
+function showCompare(m) {
+  modal({ title: `Capture #${m.number} · ${groupName(m.group)}`, wide: true, body: `<img class="compare-img" src="${m.snapshot}" alt="Model on site">`,
+    actions: [{ label: 'Close', onClick: (c) => c() }, { label: 'Add comment', icon: 'comment', kind: 'primary', onClick: (c) => { c(); openMarkupEditor(m, false); } }] });
+}
+
+// ================================================================ PLACE: stand the model on the real ground you tap
+// No tracking needed: the real camera is HEIGHT above the ground and the gyro gives its tilt, so a tap on the
+// ground in the video defines a point at true scale. The model's base centre is moved there (by moving the
+// virtual camera). Turning around with GYRO keeps it standing there; walking away makes it drift.
+function camHeight() { return settings.eye; }
+function startPlaceModel() {
+  if (!cam.on) return;
+  setTool('place-model');
+  hint('Tap the GROUND in the camera view where the model should stand', cancelTool);
+  if (!viewer.walk.gyro) toast('Tip: turn GYRO on first so the model stays put when you look around', 'info', 3500);
+}
+function placeModelAt(x, y) {
+  const c = viewer.persp;
+  c.position.y = viewer.floorY + camHeight(); c.updateMatrixWorld();
+  const rc = new THREE.Raycaster(); rc.setFromCamera(viewer.ndc(x, y), c);
+  const pt = new THREE.Vector3();
+  if (!rc.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -viewer.floorY), pt) || pt.distanceTo(c.position) > 150) {
+    return toast('That is not the ground — tap a point on the floor / ground below the horizon', 'warn', 3500);
+  }
+  const box = viewer.modelBox(), mid = box.getCenter(new THREE.Vector3());
+  const A = new THREE.Vector3(mid.x, viewer.floorY, mid.z); // model base centre
+  c.position.x += A.x - pt.x; c.position.z += A.z - pt.z;
+  cam.anchor = A;
+  toast('Model placed — look around with GYRO · ⟲ ⟳ rotate it · HEIGHT / FOV fix the scale', 'ok', 4500);
+}
+// rotate the model (relative to the real world) around its placed point, deg > 0 = clockwise seen from above
+function rotateModel(deg) {
+  const A = cam.anchor || (() => { const b = viewer.modelBox().getCenter(new THREE.Vector3()); return new THREE.Vector3(b.x, viewer.floorY, b.z); })();
+  const th = THREE.MathUtils.degToRad(-deg); // the model turns clockwise = the camera orbits it counter-clockwise
+  const p = viewer.persp.position.clone().sub(A).applyAxisAngle(new THREE.Vector3(0, 1, 0), -th).add(A);
+  viewer.persp.position.copy(p);
+  if (viewer.walk.gyro) viewer.headingTrim = (viewer.headingTrim || 0) - THREE.MathUtils.radToDeg(th);
+  else viewer.walk.yaw -= th;
+}
+$('#cam-place').onclick = startPlaceModel;
+for (const [id, d] of [['#cam-rotl', -5], ['#cam-rotr', 5]]) { // tap = 5°, hold = keep turning
+  const b = $(id); let tm = null;
+  b.addEventListener('pointerdown', (e) => { e.preventDefault(); rotateModel(d); tm = setInterval(() => rotateModel(d / 5), 60); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => { clearInterval(tm); tm = null; });
+}
+$('#cam-h').oninput = (e) => { // camera height above the ground: sets the true scale of a placed model
+  const nh = +e.target.value, dy = nh - settings.eye;
+  settings.eye = nh; viewer.walk.eye = nh; saveSettings();
+  viewer.persp.position.y += dy;
+  $('#cam-h-v').textContent = `${nh.toFixed(2)} m`;
+};
+
+// ================================================================ QR LOCK (inside CAM): snap the camera to a printed QR
+// Uses the QR pose solver: the QR's size, mounting and model position come from the QR itself / the project.
+// Position + heading are applied once per detection (≤ 2 m: full, 2–3 m: half, further: quarter), then you
+// can look around with GYRO. Walking away makes it drift again — aim at a QR (or use the sticks) to re-lock.
+function setQrLock(on) {
+  cam.qr = !!on; cam.qrT = 0; cam.qrLast = 0;
+  if (on) viewer.hooks.add(camQrTick); else viewer.hooks.delete(camQrTick);
+  $('#cam-qr').classList.toggle('on', cam.qr);
+  $('#cam-qr-s').textContent = cam.qr ? 'looking…' : 'off';
+}
+$('#cam-qr').onclick = () => {
+  if (!cam.qr && !app.project.geo.controlPoints.length) toast('No QR points yet — create one with Create QR and print it', 'warn', 4500);
+  setQrLock(!cam.qr);
+};
+function camQrTick(dt) {
+  if (!cam.on || !cam.qr) return;
+  cam.qrT += dt; if (cam.qrT < 0.3) return; cam.qrT = 0;
+  const v = $('#camfeed'), st = $('#cam-qr-s');
+  let det = null; try { det = detectQR(v); } catch (e) { det = null; }
+  if (!det) { if (performance.now() - cam.qrLast > 1500) st.textContent = 'looking…'; return; }
+  const cp0 = decodeCP(det.text);
+  if (!cp0) { st.textContent = 'not a SiteAR QR'; return; }
+  const rec = findCP(cp0);
+  const cp = { name: (rec && rec.name) || cp0.name, position: (rec && rec.position) || cp0.position, size: (rec && rec.size) || cp0.size,
+    mount: (rec && rec.mount) || cp0.mount, heading: rec && Number.isFinite(rec.heading) ? rec.heading : cp0.heading };
+  // camera intrinsics of the VIDEO, derived from the lens (FOV) slider and how the video fills the screen
+  const cv = viewer.canvas, s = Math.max(cv.clientWidth / det.vw, cv.clientHeight / det.vh);
+  const f = (cv.clientHeight / 2) / Math.tan(THREE.MathUtils.degToRad(settings.camFov) / 2) / s;
+  const pose = poseFromDetection(det, cp.size, f, det.vw / 2, det.vh / 2);
+  if (!pose) { st.textContent = 'cannot solve'; return; }
+  if (pose.dist > 4) { st.textContent = `${pose.dist.toFixed(1)} m — come closer`; return; }
+  if (pose.reproj > 8) { st.textContent = 'blurry / too oblique'; return; }
+  const m = poseToModel(pose, cp);
+  let gain = pose.dist <= 2 ? 1 : pose.dist <= 3 ? 0.5 : 0.25;
+  if (performance.now() - cam.qrLast < 2500) gain = Math.min(gain, 0.5); // smooth repeated detections
+  cam.qrLast = performance.now();
+  // position: the camera itself (not eye height above the floor)
+  viewer.persp.position.lerp(viewer.ifcToWorld(m.position), gain);
+  // heading (+ pitch when not using the gyro)
+  const w = viewer.walk;
+  if (w.gyro) {
+    let fw = new THREE.Vector3(0, 0, -1).applyQuaternion(viewer.persp.quaternion);
+    if (Math.abs(fw.y) > 0.85) fw = new THREE.Vector3(0, 1, 0).applyQuaternion(viewer.persp.quaternion);
+    viewer.headingTrim = (viewer.headingTrim || 0) + gain * 0.8 * normDeg180(modelHeadingOfRawDir(fw) - m.heading); // +trim turns CCW → heading drops
+  } else {
+    const yaw = -THREE.MathUtils.degToRad(m.heading);
+    w.yaw += gain * Math.atan2(Math.sin(yaw - w.yaw), Math.cos(yaw - w.yaw));
+    const fz = m.forward[2];
+    if (Math.abs(fz) < 0.85) w.pitch += gain * (Math.asin(THREE.MathUtils.clamp(fz, -1, 1)) - w.pitch);
+  }
+  st.textContent = `${cp.name} ✓ ${pose.dist.toFixed(1)} m`;
 }
 $('#cam-btn').onclick = () => toggleCam();
 $('#cam-op').oninput = (e) => {
@@ -945,14 +1077,14 @@ function infoHTML() {
         <div class="kv"><span>Method</span><b>${esc(a.method)}${a.accuracy ? ` · ±${a.accuracy.toFixed(1)} m` : ''}</b></div>`
       : '<p class="muted small">No location yet — Site → Set Location (one point)</p>'}
       <button class="btn sm" data-g="anchor">${icon('anchor')}<span>${a ? 'Re-set location' : 'Set location'}</span></button>
-    </section>
+    </section>` : ''}
     <section><h4>QR control points</h4>
       ${P.geo.controlPoints.map((c) => `<div class="model-row" data-cp="${c.id}">
         <span class="cp-ic">${icon('qr')}</span><div><b>${esc(c.name)}</b><span class="mono">${fmtM(c.position.x, 3)}, ${fmtM(c.position.y, 3)}, ${fmtM(c.position.z, 3)}</span></div>
         <button class="icon-btn sm" data-c="show" title="QR">${icon('print')}</button>
         <button class="icon-btn sm" data-c="del" title="Delete">${icon('trash')}</button></div>`).join('') || '<p class="muted small">No QR points yet</p>'}
       <button class="btn sm" data-g="cp">${icon('qr')}<span>Create QR point</span></button>
-    </section>` : ''}
+    </section>
     <section><h4>Project</h4>
       <div class="kv"><span>Name</span><b>${esc(P.name)}</b></div>
       <div class="kv"><span>Markups / views</span><b>${P.markups.length} / ${P.views.length}</b></div>
